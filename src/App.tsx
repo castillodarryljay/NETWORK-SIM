@@ -542,7 +542,7 @@ export default function App() {
       }`}
     >
       {/* Top Bar Contract: Zone 1 (Wordmark) — Zone 2 (Concise Nav Links) — Zone 3 (1 Primary Action) */}
-      <header className="h-14 px-4 sm:px-6 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-8 shrink-0 z-30">
+      <header className="h-14 px-3 sm:px-6 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-3 lg:gap-8 shrink-0 z-30">
         {/* Zone 1: Single text element wordmark */}
         <a
           href="#simulator"
@@ -550,13 +550,14 @@ export default function App() {
             e.preventDefault();
             setActiveNav('simulator');
           }}
-          className="text-base sm:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
+          className="text-sm sm:text-base lg:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 flex items-baseline gap-1.5"
         >
-          NetLab Simulator <span className="text-xs font-mono font-semibold text-cyan-400 ml-1">by SHIRO</span>
+          <span>NetLab Simulator</span>
+          <span className="text-[11px] font-mono font-semibold text-cyan-400">by SHIRO</span>
         </a>
 
         {/* Zone 2: 5 concise single-line text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
+        <nav className="hidden lg:flex items-center gap-5 xl:gap-6 text-xs font-medium text-slate-300">
           {(
             [
               { id: 'dashboard', label: 'Dashboard' },
