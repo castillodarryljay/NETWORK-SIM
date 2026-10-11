@@ -189,12 +189,12 @@ export const BottomWorkspaceDock: React.FC<BottomWorkspaceDockProps> = ({
 
   return (
     <div
-      className={`border-t border-slate-800 bg-slate-950 flex flex-col transition-all ${
+      className={`border-t border-slate-800 liquid-glass bg-slate-950/90 flex flex-col transition-all ${
         isOpen ? 'h-76 sm:h-84' : 'h-10'
       } shrink-0`}
     >
       {/* Dock Header Bar */}
-      <div className="h-10 px-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+      <div className="h-10 px-3 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1 overflow-x-auto">
           <button
             onClick={() => {

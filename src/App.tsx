@@ -1142,7 +1142,7 @@ export default function App() {
 
       {/* Non-intrusive Feedback Toast */}
       {saveToast && (
-        <div className="fixed bottom-14 md:bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border border-cyan-500/50 text-xs text-slate-100 shadow-xl flex items-center gap-2">
+        <div className="fixed bottom-14 md:bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl liquid-glass bg-slate-900/90 border border-cyan-500/50 text-xs text-slate-100 shadow-2xl flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
           <span>{saveToast}</span>
         </div>

@@ -741,6 +741,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             onTouchEnd={handleCanvasMouseUp}
             className="w-full h-full cursor-grab active:cursor-grabbing"
           >
+            <defs>
+              {/* Liquid Glass Node Drop Shadow & Specular Gradient */}
+              <filter id="glassNodeShadow" x="-25%" y="-25%" width="150%" height="160%">
+                <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#020617" floodOpacity="0.42" />
+              </filter>
+              <filter id="packetGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#22d3ee" floodOpacity="0.65" />
+              </filter>
+              <linearGradient id="glassBevelOverlay" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.22" />
+                <stop offset="45%" stopColor="#ffffff" stopOpacity="0.03" />
+                <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+              </linearGradient>
+            </defs>
             <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
               {/* Render Network Cables / Links */}
               {project.links.map((link) => {
@@ -917,11 +931,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                             className="fill-cyan-300"
                           />
                           <rect
-                            x={-40}
+                            x={-42}
                             y={-13}
-                            width={80}
+                            width={84}
                             height={24}
-                            rx={6}
+                            rx={8}
+                            filter="url(#packetGlow)"
                             className={
                               currentStepEvent.status === 'error'
                                 ? 'fill-rose-600 stroke-rose-200'
@@ -934,7 +949,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                           <text
                             textAnchor="middle"
                             dy="3"
-                            className="fill-slate-950 text-[10px] font-mono font-bold"
+                            style={{
+                              fill:
+                                currentStepEvent.status === 'error' ? '#ffffff' : '#020617',
+                            }}
+                            className="text-[10px] font-mono font-bold"
                           >
                             {currentStepEvent.protocol} {currentStepEvent.action === 'reply' ? '↩' : '→'}
                           </text>
@@ -1083,13 +1102,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                       y={-28}
                       width={56}
                       height={56}
-                      rx={12}
+                      rx={14}
+                      filter="url(#glassNodeShadow)"
                       className={`${
                         isSelected
                           ? 'fill-slate-800 stroke-cyan-400'
-                          : 'fill-slate-900 stroke-slate-700 hover:stroke-slate-500'
+                          : 'fill-slate-900 stroke-slate-700 hover:stroke-cyan-500/60'
                       }`}
-                      strokeWidth={1.5}
+                      strokeWidth={1.75}
+                    />
+
+                    {/* Liquid Glass Top Specular Sheen Overlay */}
+                    <rect
+                      x={-27}
+                      y={-27}
+                      width={54}
+                      height={54}
+                      rx={13}
+                      fill="url(#glassBevelOverlay)"
+                      className="pointer-events-none"
                     />
 
                     {/* Embedded Device Vector Icon */}
@@ -1101,27 +1132,28 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
                     {/* Operational Status Badge (Text + Color) */}
                     <rect
-                      x={12}
-                      y={-30}
-                      width={22}
-                      height={13}
-                      rx={4}
+                      x={10}
+                      y={-31}
+                      width={24}
+                      height={14}
+                      rx={5}
                       className={anyUp ? 'fill-emerald-600' : 'fill-slate-700'}
                     />
                     <text
-                      x={23}
-                      y={-21}
+                      x={22}
+                      y={-21.5}
                       textAnchor="middle"
-                      className="fill-white text-[8px] font-mono font-bold"
+                      style={{ fill: '#ffffff' }}
+                      className="text-[8px] font-mono font-bold"
                     >
                       {anyUp ? 'UP' : 'OFF'}
                     </text>
 
                     {/* Device Hostname Label */}
                     <text
-                      y={42}
+                      y={43}
                       textAnchor="middle"
-                      className="fill-slate-100 text-xs font-semibold tracking-tight"
+                      className="fill-slate-100 text-xs font-bold tracking-tight"
                     >
                       {dev.name}
                     </text>
@@ -1129,9 +1161,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                     {/* Primary IPv4 Subtitle */}
                     {primaryIp && (
                       <text
-                        y={56}
+                        y={57}
                         textAnchor="middle"
-                        className="fill-slate-400 text-[10px] font-mono"
+                        className="fill-slate-400 text-[10px] font-mono font-medium"
                       >
                         {primaryIp}
                       </text>
@@ -1142,8 +1174,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             </g>
           </svg>
 
-          {/* Bottom-Left Canvas Viewport Controls */}
-          <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-slate-900/95 border border-slate-800 p-1 rounded-lg shadow-lg">
+          {/* Bottom-Left Canvas Viewport Controls (Liquid Glass Dock) */}
+          <div className="absolute bottom-3 left-3 flex items-center gap-1 liquid-glass bg-slate-900/90 border border-slate-800 p-1.5 rounded-xl shadow-xl">
             <button
               onClick={() => setZoom((z) => Math.min(2, +(z + 0.15).toFixed(2)))}
               title="Zoom In"
@@ -1252,7 +1284,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
           {/* Contextual Floating Quick Actions for Selected Device */}
           {selectedDeviceId && (
-            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-slate-900/95 border border-slate-700 px-3 py-1.5 rounded-lg shadow-lg">
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 liquid-glass bg-slate-900/90 border border-slate-700 px-3 py-1.5 rounded-xl shadow-xl">
               <span className="text-xs font-semibold text-cyan-300 mr-1">
                 {project.devices.find((d) => d.id === selectedDeviceId)?.name}
               </span>

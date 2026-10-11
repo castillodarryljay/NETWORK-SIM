@@ -622,8 +622,8 @@ export const DeviceDesktopModal: React.FC<DeviceDesktopModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-2 sm:p-4">
-      <div className="w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col h-[90vh] max-h-[820px]">
+    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
+      <div className="w-full max-w-5xl liquid-glass bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[90vh] max-h-[820px]">
         {/* Modal Top OS Window Bar */}
         <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">

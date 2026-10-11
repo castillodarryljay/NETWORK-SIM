@@ -2,18 +2,51 @@
 
 @layer base {
   :root {
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Apple iOS Liquid Glass Design Tokens — Dark Mode Default */
+    --glass-bg-primary: rgba(15, 23, 42, 0.68);
+    --glass-bg-elevated: rgba(30, 41, 59, 0.62);
+    --glass-bg-interactive: rgba(51, 65, 85, 0.48);
+    --glass-border-luminous: rgba(255, 255, 255, 0.14);
+    --glass-border-highlight: rgba(56, 189, 248, 0.45);
+    --glass-specular-inset: inset 0 1px 0 0 rgba(255, 255, 255, 0.16), inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+    --glass-shadow-ambient: 0 12px 32px -8px rgba(2, 6, 23, 0.55), 0 4px 12px -2px rgba(2, 6, 23, 0.35);
+    --glass-blur: blur(20px) saturate(180%);
+  }
+
+  html.light {
+    /* Apple iOS Liquid Glass Design Tokens — High-Contrast Daylight Mode */
+    --glass-bg-primary: rgba(255, 255, 255, 0.82);
+    --glass-bg-elevated: rgba(248, 250, 252, 0.88);
+    --glass-bg-interactive: rgba(226, 232, 240, 0.75);
+    --glass-border-luminous: rgba(15, 23, 42, 0.12);
+    --glass-border-highlight: rgba(2, 132, 199, 0.45);
+    --glass-specular-inset: inset 0 1px 0 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 0 rgba(15, 23, 42, 0.04);
+    --glass-shadow-ambient: 0 10px 28px -6px rgba(15, 23, 42, 0.09), 0 2px 8px -2px rgba(15, 23, 42, 0.05);
+    --glass-blur: blur(20px) saturate(180%);
   }
 
   body {
     font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-attachment: fixed;
   }
 
   code, pre, .font-mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Accessible Keyboard Focus Rings */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 1px;
   }
 }
 
@@ -21,36 +54,147 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ==========================================================================
+   APPLE iOS LIQUID GLASS SURFACE ARCHITECTURE
+   ========================================================================== */
+
+/* Ambient Spatial Background Mesh for Dark & Light Modes */
+html.dark body {
+  background-color: #030712;
+  background-image:
+    radial-gradient(at 12% 10%, rgba(6, 182, 212, 0.14) 0px, transparent 48%),
+    radial-gradient(at 88% 15%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 92%, rgba(16, 185, 129, 0.09) 0px, transparent 52%);
+  color: #f8fafc;
+}
+
+html.light body {
+  background-color: #eef2f6;
+  background-image:
+    radial-gradient(at 10% 8%, rgba(14, 165, 233, 0.12) 0px, transparent 48%),
+    radial-gradient(at 90% 12%, rgba(56, 189, 248, 0.10) 0px, transparent 50%),
+    radial-gradient(at 50% 90%, rgba(16, 185, 129, 0.08) 0px, transparent 52%);
+  color: #0f172a;
+}
+
+/* Reusable Liquid Glass Utility Classes */
+.liquid-glass {
+  background: var(--glass-bg-primary);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-border-luminous);
+  box-shadow: var(--glass-specular-inset), var(--glass-shadow-ambient);
+}
+
+.liquid-glass-elevated {
+  background: var(--glass-bg-elevated);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-color: var(--glass-border-luminous);
+  box-shadow: var(--glass-specular-inset), var(--glass-shadow-ambient);
+}
+
+/* Automatic Liquid Glass Upgrade for Existing Panels, Headers, Cards & Modals */
+html.dark header,
+html.dark nav[aria-label="Primary Sidebar Navigation"],
+html.dark aside {
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.78) 0%, rgba(9, 14, 28, 0.84) 100%) !important;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.10);
+}
+
+html.dark .bg-slate-900\/95,
+html.dark .bg-slate-900\/90,
+html.dark .bg-slate-900\/80,
+html.dark .bg-slate-900\/70,
+html.dark .bg-slate-900\/60,
+html.dark .bg-slate-900\/50 {
+  background: linear-gradient(155deg, rgba(30, 41, 59, 0.68) 0%, rgba(15, 23, 42, 0.76) 100%) !important;
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 10px 28px -8px rgba(2, 6, 23, 0.45);
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Tactile Micro-Interactions on Buttons */
+button {
+  transition:
+    background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Primary Luminous Glass Buttons */
+.bg-cyan-500 {
+  background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 100%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45), 0 4px 14px -2px rgba(6, 182, 212, 0.4);
+}
+
+.bg-cyan-500:hover {
+  background: linear-gradient(180deg, #67e8f9 0%, #0891b2 100%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.6), 0 6px 18px -2px rgba(6, 182, 212, 0.55);
+}
+
+.bg-emerald-600 {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.35), 0 4px 14px -2px rgba(16, 185, 129, 0.38);
+}
+
+/* ==========================================================================
+   TOPOLOGY CANVAS SPATIAL GRID (DARK & LIGHT)
+   ========================================================================== */
 .canvas-grid-dark {
-  background-size: 24px 24px;
-  background-image: 
-    linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-color: #060b16;
+  background-size: 28px 28px, 28px 28px, 100% 100%;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
+    radial-gradient(circle at 50% 45%, rgba(6, 182, 212, 0.09) 0%, rgba(3, 7, 18, 0.92) 78%);
 }
 
 .canvas-grid-light {
-  background-size: 24px 24px;
-  background-image: 
-    linear-gradient(to right, rgba(15, 23, 42, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-color: #f1f5f9;
+  background-size: 28px 28px, 28px 28px, 100% 100%;
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+    radial-gradient(circle at 50% 45%, rgba(14, 165, 233, 0.08) 0%, rgba(241, 245, 249, 0.95) 80%);
 }
 
-/* Complete Light Mode Theme System */
-html.light body {
-  background-color: #f8fafc;
-  color: #0f172a;
+/* ==========================================================================
+   COMPLETE HIGH-CONTRAST LIGHT MODE LIQUID GLASS OVERRIDES
+   Guarantees 100% crisp, legible text across all panels, inputs, tables & SVG
+   ========================================================================== */
+html.light header,
+html.light nav[aria-label="Primary Sidebar Navigation"],
+html.light aside {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.88) 0%, rgba(241, 245, 249, 0.92) 100%) !important;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border-color: rgba(15, 23, 42, 0.10) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.95), 0 4px 20px -4px rgba(15, 23, 42, 0.06);
 }
 
 html.light .bg-slate-950,
+html.light .bg-slate-950\/40,
 html.light .bg-slate-950\/50,
 html.light .bg-slate-950\/60,
 html.light .bg-slate-950\/70,
-html.light .bg-slate-950\/80 {
-  background-color: #f8fafc !important;
-  color: #0f172a;
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/90 {
+  background-color: rgba(241, 245, 249, 0.88) !important;
+  color: #0f172a !important;
 }
 
 html.light .bg-slate-900,
+html.light .bg-slate-900\/30,
 html.light .bg-slate-900\/40,
 html.light .bg-slate-900\/50,
 html.light .bg-slate-900\/60,
@@ -58,36 +202,46 @@ html.light .bg-slate-900\/70,
 html.light .bg-slate-900\/80,
 html.light .bg-slate-900\/90,
 html.light .bg-slate-900\/95 {
-  background-color: #ffffff !important;
-  color: #0f172a;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.88) 100%) !important;
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  color: #0f172a !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 1), 0 8px 24px -6px rgba(15, 23, 42, 0.07);
 }
 
 html.light .bg-slate-800,
+html.light .bg-slate-800\/50,
+html.light .bg-slate-800\/60,
 html.light .bg-slate-800\/70,
 html.light .bg-slate-800\/80 {
-  background-color: #f1f5f9 !important;
-  color: #1e293b;
+  background-color: rgba(226, 232, 240, 0.85) !important;
+  color: #0f172a !important;
 }
 
 html.light .hover\:bg-slate-900:hover,
 html.light .hover\:bg-slate-800:hover,
 html.light .hover\:bg-slate-700:hover {
-  background-color: #e2e8f0 !important;
+  background-color: rgba(203, 213, 225, 0.75) !important;
+  color: #0f172a !important;
 }
 
+/* Light Mode Borders & Dividers */
 html.light .border-slate-800,
+html.light .border-slate-800\/60,
 html.light .border-slate-800\/70,
 html.light .border-slate-800\/80,
 html.light .border-slate-800\/90,
 html.light .border-slate-700 {
-  border-color: #cbd5e1 !important;
+  border-color: rgba(15, 23, 42, 0.13) !important;
 }
 
 html.light .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+html.light .divide-slate-800\/60 > :not([hidden]) ~ :not([hidden]),
 html.light .divide-slate-800\/70 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #e2e8f0 !important;
+  border-color: rgba(15, 23, 42, 0.10) !important;
 }
 
+/* Light Mode Typography Contrast Guarantees */
 html.light .text-white,
 html.light .text-slate-100,
 html.light .text-slate-200 {
@@ -95,17 +249,42 @@ html.light .text-slate-200 {
 }
 
 html.light .text-slate-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-400 {
   color: #334155 !important;
 }
 
-html.light .text-slate-400,
-html.light .text-slate-500 {
+html.light .text-slate-500,
+html.light .text-slate-600 {
   color: #475569 !important;
 }
 
+/* Form Inputs, Selects & Textareas in Light Mode */
+html.light input:not([type="checkbox"]):not([type="radio"]),
+html.light select,
+html.light textarea {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.light option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Semantic Accent Text Contrast in Light Mode (WCAG AA+) */
 html.light .text-cyan-400,
 html.light .text-cyan-300,
-html.light .text-cyan-200 {
+html.light .text-cyan-200,
+html.light .text-cyan-100 {
   color: #0369a1 !important;
 }
 
@@ -132,7 +311,51 @@ html.light .text-sky-300 {
   color: #0284c7 !important;
 }
 
-/* Keep solid semantic CTA buttons readable in Light Mode */
+html.light .text-blue-400 {
+  color: #1d4ed8 !important;
+}
+
+/* Translucent Status Banners in Light Mode */
+html.light .bg-cyan-950\/60,
+html.light .bg-cyan-950\/20,
+html.light .bg-cyan-500\/10,
+html.light .bg-cyan-500\/15,
+html.light .bg-cyan-500\/20 {
+  background-color: rgba(14, 165, 233, 0.14) !important;
+  border-color: rgba(2, 132, 199, 0.35) !important;
+  color: #0c4a6e !important;
+}
+
+html.light .bg-emerald-950\/70,
+html.light .bg-emerald-950\/60,
+html.light .bg-emerald-950\/25,
+html.light .bg-emerald-500\/10,
+html.light .bg-emerald-500\/15,
+html.light .bg-emerald-500\/20,
+html.light .bg-emerald-600\/20 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+  border-color: rgba(5, 150, 105, 0.35) !important;
+  color: #064e3b !important;
+}
+
+html.light .bg-amber-950\/20,
+html.light .bg-amber-500\/10,
+html.light .bg-amber-500\/15 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(217, 119, 6, 0.38) !important;
+  color: #78350f !important;
+}
+
+html.light .bg-rose-950\/60,
+html.light .bg-rose-950\/25,
+html.light .bg-rose-500\/10,
+html.light .bg-rose-500\/15 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+  border-color: rgba(225, 29, 72, 0.35) !important;
+  color: #881337 !important;
+}
+
+/* Keep Solid Action Buttons Crisp & Readable in Light Mode */
 html.light .bg-emerald-600,
 html.light .bg-rose-600 {
   color: #ffffff !important;
@@ -144,23 +367,20 @@ html.light .bg-emerald-500 {
   color: #0f172a !important;
 }
 
-html.light .bg-cyan-950\/60 {
-  background-color: #e0f2fe !important;
-}
-
 /* SVG Topology Canvas Light Mode Overrides */
 html.light .canvas-grid-dark {
-  background-color: #f1f5f9 !important;
-  background-size: 24px 24px;
-  background-image: 
-    linear-gradient(to right, rgba(15, 23, 42, 0.07) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.07) 1px, transparent 1px);
+  background-color: #eef2f6 !important;
+  background-size: 28px 28px, 28px 28px, 100% 100%;
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.065) 1px, transparent 1px),
+    radial-gradient(circle at 50% 45%, rgba(14, 165, 233, 0.09) 0%, rgba(238, 242, 246, 0.96) 80%) !important;
 }
 
 html.light svg .fill-slate-900,
 html.light svg .fill-slate-900\/95,
 html.light svg .fill-slate-900\/90 {
-  fill: #ffffff !important;
+  fill: rgba(255, 255, 255, 0.95) !important;
 }
 
 html.light svg .fill-slate-800 {
@@ -177,7 +397,7 @@ html.light svg .fill-slate-200 {
 }
 
 html.light svg .fill-slate-400 {
-  fill: #475569 !important;
+  fill: #334155 !important;
 }
 
 html.light svg .fill-cyan-300,
@@ -185,7 +405,9 @@ html.light svg .fill-sky-300 {
   fill: #0369a1 !important;
 }
 
-/* Smooth Network Simulation & UI Animations */
+/* ==========================================================================
+   FLUID NETWORK SIMULATION & MICRO-INTERACTION ANIMATIONS
+   ========================================================================== */
 @keyframes signalFlowDash {
   from {
     stroke-dashoffset: 36;
@@ -232,7 +454,19 @@ html.light svg .fill-sky-300 {
 }
 
 .animate-view-enter {
-  animation: viewFadeSlide 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: viewFadeSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Fallback when backdrop-filter is unsupported */
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .liquid-glass,
+  .liquid-glass-elevated {
+    background-color: #0f172a;
+  }
+  html.light .liquid-glass,
+  html.light .liquid-glass-elevated {
+    background-color: #ffffff;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -243,4 +477,3 @@ html.light svg .fill-sky-300 {
     scroll-behavior: auto !important;
   }
 }
-
