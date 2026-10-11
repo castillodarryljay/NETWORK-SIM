@@ -904,10 +904,9 @@ export const DeviceDesktopModal: React.FC<DeviceDesktopModalProps> = ({
                               <span className="truncate">{folder.name}</span>
                             </span>
                             {folder.isShared && (
-                              <Share2
-                                className="w-3 h-3 text-emerald-400 shrink-0"
-                                title="Shared on Network"
-                              />
+                              <span title="Shared on Network" className="shrink-0 flex items-center">
+                                <Share2 className="w-3 h-3 text-emerald-400" />
+                              </span>
                             )}
                           </button>
                         ))}
