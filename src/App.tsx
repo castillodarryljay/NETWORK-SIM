@@ -55,6 +55,7 @@ import { BottomWorkspaceDock } from './components/BottomWorkspaceDock';
 import { DeviceDesktopModal } from './components/DeviceDesktopModal';
 import { DashboardAndProjects } from './components/DashboardAndProjects';
 import { LearningAndToolsViews } from './components/LearningAndToolsViews';
+import { exportTopologyToPdf } from './utils/pdfExport';
 
 const NAV_ITEMS: { id: NavSection; label: string; shortLabel: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', shortLabel: 'Home', icon: LayoutDashboard },
@@ -500,6 +501,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportPdf = (proj: NetworkProject = currentProject) => {
+    exportTopologyToPdf(proj);
+    showToast(`Exported "${proj.name}" topology & device configurations to PDF.`);
+  };
+
   const handleImportProjectFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -546,7 +552,7 @@ export default function App() {
           }}
           className="text-base sm:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
         >
-          NetLab Simulator
+          NetLab Simulator <span className="text-xs font-mono font-semibold text-cyan-400 ml-1">by SHIRO</span>
         </a>
 
         {/* Zone 2: 5 concise single-line text navigation links */}
@@ -637,6 +643,10 @@ export default function App() {
               <div className="text-slate-400 font-mono tabular-nums">
                 {currentProject.devices.length} devices · {currentProject.links.length} cables
               </div>
+              <div className="pt-1.5 mt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                <span className="text-slate-400">Created by</span>
+                <span className="font-mono font-bold text-cyan-400 tracking-wider">SHIRO</span>
+              </div>
             </div>
           </div>
         </nav>
@@ -647,7 +657,10 @@ export default function App() {
             <div className="w-64 bg-slate-950 border-r border-slate-800 h-full p-4 flex flex-col justify-between">
               <div className="space-y-1">
                 <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-800">
-                  <span className="font-bold text-sm text-white">Navigation</span>
+                  <div>
+                    <span className="font-bold text-sm text-white block">NetLab Simulator</span>
+                    <span className="font-mono text-[10px] text-cyan-400 font-semibold">Made by SHIRO</span>
+                  </div>
                   <button
                     onClick={() => setMobileMenuOpen(false)}
                     className="p-1 text-slate-400 hover:text-white"
@@ -780,6 +793,7 @@ export default function App() {
                   }}
                   onOpenDesktopModal={(devId) => setDesktopModalDeviceId(devId)}
                   onOpenMobileInspector={() => setMobileInspectorOpen(true)}
+                  onExportPdf={() => handleExportPdf(currentProject)}
                 />
 
                 <div className="hidden xl:flex h-full">
@@ -913,6 +927,7 @@ export default function App() {
                 showToast('Project deleted.');
               }}
               onExportProject={handleExportProject}
+              onExportProjectPdf={handleExportPdf}
               onImportProjectFile={handleImportProjectFile}
               onStartGuidedLab={(labId) => {
                 const lab = GUIDED_LABS.find((l) => l.id === labId);

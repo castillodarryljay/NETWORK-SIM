@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Info,
   X,
+  FileDown,
 } from 'lucide-react';
 import {
   DeviceCategory,
@@ -117,6 +118,7 @@ interface TopologyCanvasProps {
   onOpenCliForDevice: (deviceId: string) => void;
   onOpenDesktopModal: (deviceId: string) => void;
   onOpenMobileInspector?: () => void;
+  onExportPdf?: () => void;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
@@ -155,6 +157,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onOpenCliForDevice,
   onOpenDesktopModal,
   onOpenMobileInspector,
+  onExportPdf,
 }) => {
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -575,6 +578,16 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             >
               <ShieldAlert className="w-3.5 h-3.5" /> Check Network
             </button>
+
+            {onExportPdf && (
+              <button
+                onClick={onExportPdf}
+                title="Export Visual Topology & Device Configurations to PDF"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition-colors whitespace-nowrap shrink-0"
+              >
+                <FileDown className="w-3.5 h-3.5" /> Export PDF
+              </button>
+            )}
           </div>
         </div>
 

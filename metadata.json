@@ -1,6 +1,6 @@
 {
   "name": "NetLab Simulator",
-  "description": "Interactive Network Learning and Simulation Platform for CCNA fundamentals, Cisco IOS CLI configuration, packet tracing, guided labs, and network troubleshooting.",
+  "description": "NetLab Simulator by SHIRO — Interactive Network Learning and Simulation Platform for CCNA fundamentals, Cisco IOS CLI configuration, packet tracing, file sharing, guided labs, and network troubleshooting.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
