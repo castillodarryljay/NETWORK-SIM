@@ -822,6 +822,7 @@ export function runPacketSimulation(
   let hopCount = 0;
   let reachedDestinationDevice: NetworkDevice | null = null;
   let reachedDestinationInterface: NetworkInterface | null = null;
+  const allTraversedL2Steps: L2ReachabilityResult['steps'] = [];
 
   while (hopCount < maxHops && ttl > 0) {
     hopCount++;
@@ -1163,8 +1164,8 @@ export function runPacketSimulation(
         fromDeviceId: currL3Device.id,
         fromDeviceName: currL3Device.name,
         fromInterface: traceStartIntf.shortName,
-        toDeviceId: l2Path.targetDevice?.id,
-        toDeviceName: l2Path.targetDevice?.name || 'Broadcast Domain',
+        toDeviceId: l2Path.steps[0]?.toDevice.id || l2Path.targetDevice?.id,
+        toDeviceName: l2Path.steps[0]?.toDevice.name || l2Path.targetDevice?.name || 'Broadcast Domain',
         linkId: l2Path.steps[0]?.link.id,
         protocol: 'ARP',
         srcMac: outIntf.macAddress,
@@ -1254,8 +1255,8 @@ export function runPacketSimulation(
         fromDeviceId: l2Path.targetDevice.id,
         fromDeviceName: l2Path.targetDevice.name,
         fromInterface: l2Path.targetInterface.shortName,
-        toDeviceId: currL3Device.id,
-        toDeviceName: currL3Device.name,
+        toDeviceId: l2Path.steps[l2Path.steps.length - 1]?.fromDevice.id || currL3Device.id,
+        toDeviceName: l2Path.steps[l2Path.steps.length - 1]?.fromDevice.name || currL3Device.name,
         toInterface: traceStartIntf.shortName,
         linkId: l2Path.steps[l2Path.steps.length - 1]?.link.id,
         protocol: 'ARP',
@@ -1278,6 +1279,7 @@ export function runPacketSimulation(
     }
 
     // Record L2 switching steps and update switch MAC tables
+    allTraversedL2Steps.push(...l2Path.steps);
     for (const step of l2Path.steps) {
       if (step.toDevice.type === 'l2-switch' || step.toDevice.type === 'l3-switch') {
         const hasMac = step.toDevice.macTable.some(
@@ -1623,48 +1625,108 @@ export function runPacketSimulation(
   const rttMs = Math.max(2, hopCount * 4 + events.length * 2);
   const servicePort =
     protocol === 'HTTP' ? 80 : protocol === 'SMB' ? 445 : protocol === 'FTP' ? 21 : undefined;
-  events.push({
-    id: `evt-${Date.now()}-${stepCounter}`,
-    stepIndex: stepCounter++,
-    timestamp: Date.now(),
-    fromDeviceId: reachedDestinationDevice.id,
-    fromDeviceName: reachedDestinationDevice.name,
-    fromInterface: reachedDestinationInterface.shortName,
-    toDeviceId: srcDevice.id,
-    toDeviceName: srcDevice.name,
-    toInterface: srcIntf.shortName,
-    protocol,
-    srcMac: reachedDestinationInterface.macAddress,
-    dstMac: srcIntf.macAddress,
-    srcIp: resolvedTargetIp,
-    dstIp: srcIntf.ipAddress,
-    srcPort: servicePort,
-    dstPort: servicePort ? 49152 : undefined,
-    ttl: 64 - (hopCount - 1),
-    action: 'reply',
-    summary:
-      protocol === 'ICMP'
-        ? `ICMP Echo Reply received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}): bytes=32 time=${rttMs}ms TTL=${64 - (hopCount - 1)}`
-        : protocol === 'SMB' || protocol === 'FTP'
-        ? `${protocol} Session Established (TCP Port ${servicePort}) between ${srcDevice.name} and \\\\${reachedDestinationDevice.name}\\${reachedDestinationDevice.fileSystem?.shareName || 'Shared'} (${rttMs}ms)`
-        : `HTTP 200 OK received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}) in ${rttMs}ms.`,
-    reason: `End-to-end two-way reachability verified between ${srcDevice.name} (${srcIntf.ipAddress}) and ${reachedDestinationDevice.name} (${resolvedTargetIp}).`,
-    osiLayers: {
-      layer1: `Physical Return Path Verified (${rttMs}ms RTT)`,
-      layer2: `Ethernet II Src: ${reachedDestinationInterface.macAddress} -> Dst: ${srcIntf.macAddress}`,
-      layer3: `IPv4 Src: ${resolvedTargetIp} -> Dst: ${srcIntf.ipAddress}, TTL: ${64 - (hopCount - 1)}`,
-      layer4: servicePort ? `TCP Src Port: ${servicePort}, Dst Port: 49152 [PSH, ACK]` : undefined,
-      layer7:
+
+  if (allTraversedL2Steps.length > 0) {
+    const reverseSteps = [...allTraversedL2Steps].reverse();
+    for (let i = 0; i < reverseSteps.length; i++) {
+      const step = reverseSteps[i];
+      const isFinalHop = i === reverseSteps.length - 1;
+      events.push({
+        id: `evt-${Date.now()}-${stepCounter}`,
+        stepIndex: stepCounter++,
+        timestamp: Date.now(),
+        fromDeviceId: step.toDevice.id,
+        fromDeviceName: step.toDevice.name,
+        fromInterface: step.toInterface.shortName,
+        toDeviceId: step.fromDevice.id,
+        toDeviceName: step.fromDevice.name,
+        toInterface: step.fromInterface.shortName,
+        linkId: step.link.id,
+        protocol,
+        srcMac: reachedDestinationInterface.macAddress,
+        dstMac: srcIntf.macAddress,
+        srcIp: resolvedTargetIp,
+        dstIp: srcIntf.ipAddress,
+        srcPort: servicePort,
+        dstPort: servicePort ? 49152 : undefined,
+        ttl: 64 - (hopCount - 1),
+        vlanId: step.vlanId,
+        action: 'reply',
+        summary: isFinalHop
+          ? protocol === 'ICMP'
+            ? `ICMP Echo Reply received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}): bytes=32 time=${rttMs}ms TTL=${64 - (hopCount - 1)}`
+            : protocol === 'SMB' || protocol === 'FTP'
+            ? `${protocol} Session Established between ${srcDevice.name} and \\\\${reachedDestinationDevice.name}\\${reachedDestinationDevice.fileSystem?.shareName || 'Shared'} (${rttMs}ms)`
+            : `HTTP 200 OK received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}) in ${rttMs}ms.`
+          : `${step.toDevice.name} forwarded ${protocol} Reply frame across ${step.link.type.toUpperCase()} link to ${step.fromDevice.name}.`,
+        reason: `Return path frame transmission toward ${srcDevice.name} (${srcIntf.ipAddress}).`,
+        osiLayers: {
+          layer1: `${step.link.type.toUpperCase()} Link (${step.toInterface.shortName} <-> ${step.fromInterface.shortName})`,
+          layer2: `Ethernet II Unicast Src: ${reachedDestinationInterface.macAddress} -> Dst: ${srcIntf.macAddress}`,
+          layer3: `IPv4 Src: ${resolvedTargetIp} -> Dst: ${srcIntf.ipAddress}, TTL: ${64 - (hopCount - 1)}`,
+          layer4: servicePort ? `TCP Src Port: ${servicePort}, Dst Port: 49152 [PSH, ACK]` : undefined,
+          layer7:
+            protocol === 'ICMP'
+              ? 'ICMP Echo Reply (Type 0, Code 0)'
+              : protocol === 'SMB'
+              ? 'SMB2 TREE_CONNECT & FILE_SYNC Response (TCP 445)'
+              : protocol === 'FTP'
+              ? 'FTP 226 Transfer Complete / Directory Listing (TCP 21)'
+              : 'HTTP/1.1 200 OK (Content-Type: text/html)',
+        },
+        status: 'success',
+      });
+    }
+  } else {
+    const directLink = links.find(
+      (l) =>
+        (l.sourceDeviceId === reachedDestinationDevice.id && l.targetDeviceId === srcDevice.id) ||
+        (l.targetDeviceId === reachedDestinationDevice.id && l.sourceDeviceId === srcDevice.id)
+    );
+    events.push({
+      id: `evt-${Date.now()}-${stepCounter}`,
+      stepIndex: stepCounter++,
+      timestamp: Date.now(),
+      fromDeviceId: reachedDestinationDevice.id,
+      fromDeviceName: reachedDestinationDevice.name,
+      fromInterface: reachedDestinationInterface.shortName,
+      toDeviceId: srcDevice.id,
+      toDeviceName: srcDevice.name,
+      toInterface: srcIntf.shortName,
+      linkId: directLink?.id,
+      protocol,
+      srcMac: reachedDestinationInterface.macAddress,
+      dstMac: srcIntf.macAddress,
+      srcIp: resolvedTargetIp,
+      dstIp: srcIntf.ipAddress,
+      srcPort: servicePort,
+      dstPort: servicePort ? 49152 : undefined,
+      ttl: 64 - (hopCount - 1),
+      action: 'reply',
+      summary:
         protocol === 'ICMP'
-          ? 'ICMP Echo Reply (Type 0, Code 0)'
-          : protocol === 'SMB'
-          ? 'SMB2 TREE_CONNECT & FILE_SYNC Response (TCP 445)'
-          : protocol === 'FTP'
-          ? 'FTP 226 Transfer Complete / Directory Listing (TCP 21)'
-          : 'HTTP/1.1 200 OK (Content-Type: text/html)',
-    },
-    status: 'success',
-  });
+          ? `ICMP Echo Reply received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}): bytes=32 time=${rttMs}ms TTL=${64 - (hopCount - 1)}`
+          : protocol === 'SMB' || protocol === 'FTP'
+          ? `${protocol} Session Established between ${srcDevice.name} and \\\\${reachedDestinationDevice.name}\\${reachedDestinationDevice.fileSystem?.shareName || 'Shared'} (${rttMs}ms)`
+          : `HTTP 200 OK received by ${srcDevice.name} from ${reachedDestinationDevice.name} (${resolvedTargetIp}) in ${rttMs}ms.`,
+      reason: `End-to-end two-way reachability verified between ${srcDevice.name} (${srcIntf.ipAddress}) and ${reachedDestinationDevice.name} (${resolvedTargetIp}).`,
+      osiLayers: {
+        layer1: `Physical Return Path Verified (${rttMs}ms RTT)`,
+        layer2: `Ethernet II Src: ${reachedDestinationInterface.macAddress} -> Dst: ${srcIntf.macAddress}`,
+        layer3: `IPv4 Src: ${resolvedTargetIp} -> Dst: ${srcIntf.ipAddress}, TTL: ${64 - (hopCount - 1)}`,
+        layer4: servicePort ? `TCP Src Port: ${servicePort}, Dst Port: 49152 [PSH, ACK]` : undefined,
+        layer7:
+          protocol === 'ICMP'
+            ? 'ICMP Echo Reply (Type 0, Code 0)'
+            : protocol === 'SMB'
+            ? 'SMB2 TREE_CONNECT & FILE_SYNC Response (TCP 445)'
+            : protocol === 'FTP'
+            ? 'FTP 226 Transfer Complete / Directory Listing (TCP 21)'
+            : 'HTTP/1.1 200 OK (Content-Type: text/html)',
+      },
+      status: 'success',
+    });
+  }
 
   return {
     session: {

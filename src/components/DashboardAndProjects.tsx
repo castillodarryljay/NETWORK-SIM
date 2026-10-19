@@ -80,6 +80,7 @@ export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
   const [renameText, setRenameText] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmResetProgress, setConfirmResetProgress] = useState(false);
+  const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState<string>('All');
 
   const checklistItems = [
     {
@@ -122,48 +123,50 @@ export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
   if (mode === 'dashboard') {
     return (
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-950 text-slate-100">
-        <div className="max-w-6xl mx-auto space-y-8">
-          {/* Welcome Header & Primary Quick Actions */}
-          <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 border-b border-slate-800 pb-6">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-cyan-400 tracking-wide">
-                CCNA &amp; Computer Systems Servicing Workstation · Engineered by SHIRO
-              </p>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 tracking-tight">
+        <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8">
+          {/* Welcome Header & Primary Quick Actions: Fluid across all device screen sizes */}
+          <div className="p-4 sm:p-6 rounded-2xl liquid-glass bg-slate-900/60 border border-slate-800/80 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-400 text-[11px] font-medium tracking-wide">
+                <span>CCNA &amp; Computer Systems Servicing</span>
+                <span className="text-slate-600">·</span>
+                <span className="font-semibold text-cyan-300">Engineered by SHIRO</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white tracking-tight break-words">
                 Welcome to NetLab Simulator
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1.5 max-w-3xl leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-400 max-w-3xl leading-relaxed break-words">
                 Design network topologies, configure Cisco IOS routers and switches via CLI, trace live ARP, ICMP, HTTP, and SMB/FTP packets step-by-step, and master subnetting.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-wrap items-center gap-2 w-full lg:w-auto shrink-0">
               <button
                 onClick={() => onNavigate('simulator')}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors w-full sm:w-auto shadow-md"
               >
                 <Play className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate max-w-[220px] sm:max-w-none">
+                <span className="truncate max-w-[180px] sm:max-w-[220px]">
                   Continue Workspace ({currentProject.name})
                 </span>
               </button>
               <button
                 onClick={() => onStartGuidedLab(nextRecommendedLab.id)}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 text-slate-100 hover:bg-slate-800 transition-colors whitespace-nowrap"
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-100 hover:bg-slate-800 transition-colors whitespace-nowrap w-full sm:w-auto"
               >
                 Start Guided Lab
               </button>
               <button
                 onClick={() => onNavigate('subnet-calc')}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 text-slate-100 hover:bg-slate-800 transition-colors whitespace-nowrap"
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900/90 border border-slate-700/80 text-slate-100 hover:bg-slate-800 transition-colors whitespace-nowrap w-full sm:w-auto"
               >
                 <Calculator className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> Subnet Calculator
               </button>
               {onExportProjectPdf && (
                 <button
                   onClick={() => onExportProjectPdf(currentProject)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 hover:bg-slate-800 transition-colors whitespace-nowrap"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-slate-900/90 border border-cyan-500/40 text-cyan-300 hover:bg-slate-800 transition-colors whitespace-nowrap w-full sm:w-auto"
                 >
-                  <FileDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> Export Topology to PDF
+                  <FileDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> Export PDF
                 </button>
               )}
             </div>
@@ -324,48 +327,100 @@ export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
           </div>
 
           {/* Ready-to-Open Verified Example Topologies */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-base font-bold text-white">
-                  Verified Example Topologies & Starter Templates
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>Verified Example Topologies &amp; Starter Templates</span>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 font-semibold">
+                    {NETWORK_TEMPLATES.length} Labs
+                  </span>
                 </h2>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Open any pre-built network topology in the simulator without overwriting your saved projects.
                 </p>
               </div>
               <button
                 onClick={() => onNavigate('projects')}
-                className="text-xs text-cyan-400 hover:underline font-medium"
+                className="text-xs text-cyan-400 hover:underline font-medium shrink-0 self-start sm:self-auto"
               >
-                Manage All Projects ({savedProjects.length})
+                Manage All Projects ({savedProjects.length}) →
               </button>
             </div>
 
+            {/* Category Filter Tabs */}
+            <div className="flex flex-wrap gap-1.5 pb-1">
+              {(
+                ['All', 'Network Topologies', 'Starter LAN', 'Routing', 'VLANs & Switching', 'Services', 'Enterprise', 'Troubleshooting'] as const
+              ).map((cat) => {
+                const count = cat === 'All'
+                  ? NETWORK_TEMPLATES.length
+                  : NETWORK_TEMPLATES.filter((t) => t.category === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setDashboardTemplateFilter(cat)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                      dashboardTemplateFilter === cat
+                        ? 'bg-cyan-500 text-slate-950 font-bold shadow-md'
+                        : 'bg-slate-900/70 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                    }`}
+                  >
+                    <span>{cat}</span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                      dashboardTemplateFilter === cat ? 'bg-slate-950/30 text-slate-950' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {NETWORK_TEMPLATES.map((tpl) => (
+              {NETWORK_TEMPLATES.filter(
+                (tpl) => dashboardTemplateFilter === 'All' || tpl.category === dashboardTemplateFilter
+              ).map((tpl) => (
                 <div
                   key={tpl.id}
-                  className="p-4 rounded-xl border border-slate-800 bg-slate-900/50 hover:border-slate-700 flex flex-col justify-between space-y-3"
+                  className="p-4 rounded-xl border border-slate-800 bg-slate-900/50 hover:border-cyan-500/40 hover:bg-slate-900/80 flex flex-col justify-between space-y-3 transition-all"
                 >
-                  <div>
-                    <div className="text-[11px] text-cyan-400 font-medium">
-                      {tpl.category} · {tpl.difficulty}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-cyan-400 font-medium">
+                        {tpl.category}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          tpl.difficulty === 'Beginner'
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : tpl.difficulty === 'Intermediate'
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : 'bg-rose-500/20 text-rose-300'
+                        }`}
+                      >
+                        {tpl.difficulty}
+                      </span>
                     </div>
-                    <h3 className="text-sm font-bold text-white mt-1">{tpl.name}</h3>
-                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                    <h3 className="text-sm font-bold text-white">{tpl.name}</h3>
+                    <p className="text-xs text-slate-400 leading-relaxed">
                       {tpl.description}
                     </p>
                   </div>
                   <button
                     onClick={() => {
-                      const built = tpl.buildProject();
-                      onOpenProject(built);
-                      onNavigate('simulator');
+                      try {
+                        const built = tpl.buildProject();
+                        onOpenProject(built);
+                        onNavigate('simulator');
+                      } catch (err: any) {
+                        console.error('Failed to open template topology:', err);
+                      }
                     }}
-                    className="w-full py-2 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-200 text-xs font-semibold transition-colors"
+                    className="w-full py-2 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
                   >
-                    Open Example Topology
+                    <Play className="w-3.5 h-3.5 shrink-0" />
+                    <span>Open Example Topology</span>
                   </button>
                 </div>
               ))}

@@ -32,7 +32,15 @@ import {
   Info,
   X,
   FileDown,
+  Layers,
+  Repeat,
+  Sparkles,
+  ExternalLink,
+  Minimize2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { NETWORK_TEMPLATES } from '../data/templates';
 import {
   DeviceCategory,
   DeviceModelTemplate,
@@ -119,6 +127,11 @@ interface TopologyCanvasProps {
   onOpenDesktopModal: (deviceId: string) => void;
   onOpenMobileInspector?: () => void;
   onExportPdf?: () => void;
+  isAutoLooping?: boolean;
+  onToggleAutoLoop?: () => void;
+  onSelectPresetTopology?: (templateId: string) => void;
+  isWorkspaceFullscreen?: boolean;
+  onToggleWorkspaceFullscreen?: () => void;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
@@ -158,6 +171,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onOpenDesktopModal,
   onOpenMobileInspector,
   onExportPdf,
+  isAutoLooping = true,
+  onToggleAutoLoop,
+  onSelectPresetTopology,
+  isWorkspaceFullscreen = false,
+  onToggleWorkspaceFullscreen,
 }) => {
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -166,6 +184,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   const [draggingDeviceId, setDraggingDeviceId] = useState<string | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+  const [presetCategoryFilter, setPresetCategoryFilter] = useState<string>('All');
+  const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
 
   // Animated Packet Travel Progress (0 -> 1 along the active link)
   const [packetTravelProgress, setPacketTravelProgress] = useState<number>(0.5);
@@ -215,6 +237,36 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const [showInterfaceLabels, setShowInterfaceLabels] = useState(true);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [editingAnnotationText, setEditingAnnotationText] = useState<string>('');
+  const [isLibraryMinimized, setIsLibraryMinimized] = useState<boolean>(() => Boolean(isWorkspaceFullscreen));
+
+  // Sync library minimized when workspace fullscreen is toggled
+  React.useEffect(() => {
+    if (isWorkspaceFullscreen) {
+      setIsLibraryMinimized(true);
+    }
+  }, [isWorkspaceFullscreen]);
+
+  // Global hotkeys (F to toggle fullscreen, Escape to exit)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        onToggleWorkspaceFullscreen?.();
+      } else if (e.key === 'Escape' && isWorkspaceFullscreen) {
+        e.preventDefault();
+        onToggleWorkspaceFullscreen?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isWorkspaceFullscreen, onToggleWorkspaceFullscreen]);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -353,8 +405,54 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   };
 
   const handleFitToScreen = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    if (project.devices.length === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const xs = project.devices.map((d) => d.x);
+    const ys = project.devices.map((d) => d.y);
+    const minX = Math.min(...xs) - 80;
+    const maxX = Math.max(...xs) + 80;
+    const minY = Math.min(...ys) - 80;
+    const maxY = Math.max(...ys) + 80;
+    const width = Math.max(160, maxX - minX);
+    const height = Math.max(160, maxY - minY);
+    const targetZoom = Math.min(
+      3.0,
+      Math.max(0.15, Math.min((rect.width - 100) / width, (rect.height - 100) / height))
+    );
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    setZoom(+targetZoom.toFixed(2));
+    setPan({
+      x: Math.round(rect.width / 2 - centerX * targetZoom),
+      y: Math.round(rect.height / 2 - centerY * targetZoom),
+    });
+  };
+
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+    setZoom((prevZoom) => {
+      const newZoom = Math.min(4.0, Math.max(0.1, +(prevZoom * zoomFactor).toFixed(2)));
+      setPan((prevPan) => ({
+        x: Math.round(mouseX - (mouseX - prevPan.x) * (newZoom / prevZoom)),
+        y: Math.round(mouseY - (mouseY - prevPan.y) * (newZoom / prevZoom)),
+      }));
+      return newZoom;
+    });
   };
 
   const sourceConnectDev = project.devices.find((d) => d.id === connectSourceDeviceId);
@@ -362,84 +460,108 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   return (
     <div className="flex flex-1 h-full overflow-hidden relative bg-slate-950 text-slate-100">
-      {/* Desktop Left Panel: Device Library */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-slate-800 bg-slate-900/80 shrink-0">
-        <div className="p-3 border-b border-slate-800">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold tracking-wide text-slate-300">Device Library</h2>
-            <span className="text-xs text-slate-400 tabular-nums">{filteredCatalog.length} models</span>
-          </div>
-          <input
-            type="search"
-            value={libSearch}
-            onChange={(e) => setLibSearch(e.target.value)}
-            placeholder="Filter PCs, routers, switches..."
-            aria-label="Filter devices in library"
-            className="w-full px-2.5 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-md text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
-          />
-          <div className="flex flex-wrap gap-1 mt-2">
-            {(
-              [
-                { id: 'all', label: 'All' },
-                { id: 'end-devices', label: 'End' },
-                { id: 'routers', label: 'Routers' },
-                { id: 'switches', label: 'Switches' },
-                { id: 'wireless', label: 'Wi-Fi' },
-                { id: 'security-wan', label: 'WAN/Sec' },
-              ] as const
-            ).map((tab) => (
+      {/* Desktop Left Panel: Device Library (collapsible / minimizable) */}
+      {!isLibraryMinimized && (
+        <aside className="hidden lg:flex flex-col w-64 border-r border-slate-800 bg-slate-900/80 shrink-0">
+          <div className="p-3 border-b border-slate-800">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-semibold tracking-wide text-slate-300">Device Library</h2>
+                <span className="text-xs text-slate-400 tabular-nums">{filteredCatalog.length}</span>
+              </div>
               <button
-                key={tab.id}
-                onClick={() => setLibCategory(tab.id)}
-                className={`px-2 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
-                  libCategory === tab.id
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
+                onClick={() => setIsLibraryMinimized(true)}
+                title="Minimize Device Library"
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                aria-label="Minimize Library"
               >
-                {tab.label}
+                <ChevronLeft className="w-4 h-4" />
               </button>
+            </div>
+            <input
+              type="search"
+              value={libSearch}
+              onChange={(e) => setLibSearch(e.target.value)}
+              placeholder="Filter PCs, routers, switches..."
+              aria-label="Filter devices in library"
+              className="w-full px-2.5 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-md text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+            />
+            <div className="flex flex-wrap gap-1 mt-2">
+              {(
+                [
+                  { id: 'all', label: 'All' },
+                  { id: 'end-devices', label: 'End' },
+                  { id: 'routers', label: 'Routers' },
+                  { id: 'switches', label: 'Switches' },
+                  { id: 'wireless', label: 'Wi-Fi' },
+                  { id: 'security-wan', label: 'WAN/Sec' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setLibCategory(tab.id)}
+                  className={`px-2 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+                    libCategory === tab.id
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+            {filteredCatalog.map((tpl) => (
+              <div
+                key={tpl.type}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/netlab-device', tpl.type);
+                }}
+                onClick={() => onAddDevice(tpl)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onAddDevice(tpl);
+                  }
+                }}
+                className="group p-2.5 rounded-lg border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/50 hover:bg-slate-900 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="p-2 rounded-md bg-slate-900 text-cyan-400 border border-slate-800 group-hover:border-cyan-500/40 shrink-0">
+                      <DeviceNodeSvg type={tpl.type} className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-100 truncate">{tpl.model}</div>
+                      <div className="text-[11px] text-slate-400 truncate">{tpl.interfaceSummary}</div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    + Add
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
-        </div>
+        </aside>
+      )}
 
-        <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
-          {filteredCatalog.map((tpl) => (
-            <div
-              key={tpl.type}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/netlab-device', tpl.type);
-              }}
-              onClick={() => onAddDevice(tpl)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onAddDevice(tpl);
-                }
-              }}
-              className="group p-2.5 rounded-lg border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/50 hover:bg-slate-900 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-md bg-slate-900 text-cyan-400 border border-slate-800 group-hover:border-cyan-500/40 shrink-0">
-                    <DeviceNodeSvg type={tpl.type} className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-slate-100 truncate">{tpl.model}</div>
-                    <div className="text-[11px] text-slate-400 truncate">{tpl.interfaceSummary}</div>
-                  </div>
-                </div>
-                <span className="text-[11px] text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  + Add
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
+      {/* Floating expand button when device library is minimized */}
+      {isLibraryMinimized && (
+        <button
+          onClick={() => setIsLibraryMinimized(false)}
+          title="Expand Device Library"
+          className="hidden lg:flex items-center gap-1.5 absolute top-14 left-3 z-30 px-2.5 py-1.5 rounded-xl liquid-glass-elevated bg-slate-900/95 border border-slate-700/80 text-slate-300 hover:text-white hover:border-cyan-500/50 shadow-xl text-xs font-medium transition-all"
+        >
+          <ChevronRight className="w-3.5 h-3.5 text-cyan-400" />
+          <span>+ Device</span>
+        </button>
+      )}
 
       {/* Center Workspace: Toolbar + Interactive SVG Topology Canvas */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
@@ -505,8 +627,41 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             </div>
           )}
 
-          {/* Quick Ping & Diagnostics Bar */}
+          {/* Preset Topology Selector, Quick Ping & Diagnostics Bar */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Direct Preset Topology Selector */}
+            <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+              <Layers className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value && onSelectPresetTopology) {
+                    onSelectPresetTopology(e.target.value);
+                  }
+                }}
+                aria-label="Select Preset Network Topology"
+                className="bg-transparent text-xs text-slate-200 focus:outline-none max-w-[130px] sm:max-w-[170px] truncate cursor-pointer font-medium"
+              >
+                <option value="" disabled className="bg-slate-900 text-slate-400">
+                  {NETWORK_TEMPLATES.find((t) => t.name.toLowerCase().includes(project.name.toLowerCase()))?.name || 'Load Preset Topology...'}
+                </option>
+                {NETWORK_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id} className="bg-slate-900 text-slate-100">
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => setPresetModalOpen(true)}
+                title="Browse Verified Preset Topologies Gallery"
+                aria-label="Browse Preset Topologies Gallery"
+                className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span className="hidden sm:inline">Presets</span>
+              </button>
+            </div>
+
             <div className="hidden xl:flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
               <select
                 value={pingSourceId || selectedDeviceId || ''}
@@ -552,12 +707,18 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
               <button
                 onClick={() => onSetSimulationMode('realtime')}
-                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
                   simulationMode === 'realtime'
-                    ? 'bg-slate-800 text-white'
+                    ? 'bg-slate-800 text-white font-semibold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
+                {simulationMode === 'realtime' && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                )}
                 Realtime
               </button>
               <button
@@ -586,6 +747,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition-colors whitespace-nowrap shrink-0"
               >
                 <FileDown className="w-3.5 h-3.5" /> Export PDF
+              </button>
+            )}
+
+            {onToggleWorkspaceFullscreen && (
+              <button
+                onClick={onToggleWorkspaceFullscreen}
+                title={isWorkspaceFullscreen ? 'Exit Fullscreen (Esc or F)' : 'Fullscreen Workspace / Minimize All Panels (Press F)'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 border ${
+                  isWorkspaceFullscreen
+                    ? 'bg-cyan-500 text-slate-950 font-bold border-cyan-400 shadow-md'
+                    : 'bg-slate-950 border-slate-800 text-slate-200 hover:text-white hover:border-slate-700'
+                }`}
+              >
+                {isWorkspaceFullscreen ? (
+                  <Minimize2 className="w-3.5 h-3.5" />
+                ) : (
+                  <Maximize2 className="w-3.5 h-3.5 text-cyan-400" />
+                )}
+                <span>{isWorkspaceFullscreen ? 'Restore UI' : 'Fullscreen'}</span>
               </button>
             )}
           </div>
@@ -631,6 +811,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               <span className="text-slate-400 font-mono tabular-nums mr-1">
                 Step {Math.min(currentStepIndex + 1, activeSimulation.events.length)} / {activeSimulation.events.length}
               </span>
+              {onToggleAutoLoop && (
+                <button
+                  onClick={onToggleAutoLoop}
+                  title={isAutoLooping ? 'Auto-Loop Continuous Traffic: ON' : 'Auto-Loop Continuous Traffic: OFF'}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors whitespace-nowrap ${
+                    isAutoLooping
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Repeat className="w-3 h-3" />
+                  <span className="hidden sm:inline">Loop</span>
+                </button>
+              )}
               <button
                 onClick={onPlayPauseSteps}
                 className="px-2.5 py-1 rounded bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition-colors whitespace-nowrap shrink-0"
@@ -739,6 +933,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             onTouchStart={handleCanvasTouchStart}
             onTouchMove={handleCanvasTouchMove}
             onTouchEnd={handleCanvasMouseUp}
+            onWheel={handleWheel}
             className="w-full h-full cursor-grab active:cursor-grabbing"
           >
             <defs>
@@ -765,10 +960,17 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 const srcIf = src.interfaces.find((i) => i.id === link.sourceInterfaceId);
                 const dstIf = dst.interfaces.find((i) => i.id === link.targetInterfaceId);
 
-                const isHighlightedLink =
+                const isHighlightedLink = Boolean(
                   currentStepEvent &&
-                  ((currentStepEvent.fromDeviceId === src.id && currentStepEvent.toDeviceId === dst.id) ||
-                    (currentStepEvent.fromDeviceId === dst.id && currentStepEvent.toDeviceId === src.id));
+                  (
+                    currentStepEvent.linkId === link.id ||
+                    (currentStepEvent.fromDeviceId === src.id && currentStepEvent.toDeviceId === dst.id) ||
+                    (currentStepEvent.fromDeviceId === dst.id && currentStepEvent.toDeviceId === src.id) ||
+                    (currentStepEvent.action === 'reply' &&
+                      ((currentStepEvent.fromDeviceId === dst.id && currentStepEvent.toDeviceId === src.id) ||
+                       (currentStepEvent.fromDeviceId === src.id && currentStepEvent.toDeviceId === dst.id)))
+                  )
+                );
 
                 const strokeColor = isHighlightedLink
                   ? '#22d3ee'
@@ -827,17 +1029,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                       }
                     />
 
-                    {/* Animated Signal Stream Overlay when Packet is Traversing Link */}
-                    {isHighlightedLink && (
+                    {/* Animated Signal Stream Overlay: Active carrier signal when link is up in Realtime mode, or luminous flow when packet traverses */}
+                    {(isHighlightedLink || (simulationMode === 'realtime' && link.status === 'up')) && (
                       <line
-                        x1={currentStepEvent?.fromDeviceId === src.id ? src.x : dst.x}
-                        y1={currentStepEvent?.fromDeviceId === src.id ? src.y : dst.y}
-                        x2={currentStepEvent?.fromDeviceId === src.id ? dst.x : src.x}
-                        y2={currentStepEvent?.fromDeviceId === src.id ? dst.y : src.y}
-                        stroke="#ffffff"
-                        strokeOpacity={0.75}
-                        strokeWidth={2.5}
-                        strokeDasharray="6 12"
+                        x1={src.x}
+                        y1={src.y}
+                        x2={dst.x}
+                        y2={dst.y}
+                        stroke={
+                          isHighlightedLink
+                            ? currentStepEvent?.status === 'error'
+                              ? '#fb7185'
+                              : currentStepEvent?.action === 'reply'
+                              ? '#34d399'
+                              : '#22d3ee'
+                            : '#38bdf8'
+                        }
+                        strokeOpacity={isHighlightedLink ? 0.95 : 0.38}
+                        strokeWidth={isHighlightedLink ? 3.5 : 2}
+                        strokeDasharray={isHighlightedLink ? '6 10' : '4 12'}
                         className="animate-signal-flow pointer-events-none"
                       />
                     )}
@@ -909,54 +1119,78 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
                     {/* Animated Packet Envelope Gliding from Sender to Receiver */}
                     {isHighlightedLink && currentStepEvent && (() => {
-                      const fromIsSrc = currentStepEvent.fromDeviceId === src.id;
-                      const startX = fromIsSrc ? src.x : dst.x;
-                      const startY = fromIsSrc ? src.y : dst.y;
-                      const endX = fromIsSrc ? dst.x : src.x;
-                      const endY = fromIsSrc ? dst.y : src.y;
+                      const isDstToSrc =
+                        currentStepEvent.fromDeviceId === dst.id ||
+                        currentStepEvent.toDeviceId === src.id;
+
+                      const startX = isDstToSrc ? dst.x : src.x;
+                      const startY = isDstToSrc ? dst.y : src.y;
+                      const endX = isDstToSrc ? src.x : dst.x;
+                      const endY = isDstToSrc ? src.y : dst.y;
                       const pktX = startX + (endX - startX) * packetTravelProgress;
                       const pktY = startY + (endY - startY) * packetTravelProgress;
 
                       return (
                         <g
-                          transform={`translate(${pktX}, ${pktY - 16})`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
+                          transform={`translate(${pktX}, ${pktY})`}
+                          className="pointer-events-none z-30"
                         >
+                          {/* Radial Pulse Wave on Cable */}
                           <circle
                             cx={0}
-                            cy={16}
-                            r={5}
-                            className="fill-cyan-300"
-                          />
-                          <rect
-                            x={-42}
-                            y={-13}
-                            width={84}
-                            height={24}
-                            rx={8}
-                            filter="url(#packetGlow)"
+                            cy={0}
+                            r={13}
                             className={
                               currentStepEvent.status === 'error'
-                                ? 'fill-rose-600 stroke-rose-200'
-                                : currentStepEvent.protocol === 'ARP'
-                                ? 'fill-amber-500 stroke-amber-100'
-                                : 'fill-cyan-500 stroke-white'
+                                ? 'fill-rose-500/35 animate-ping'
+                                : currentStepEvent.action === 'reply'
+                                ? 'fill-emerald-400/35 animate-ping'
+                                : 'fill-cyan-400/35 animate-ping'
+                            }
+                          />
+                          {/* Glowing Beacon Bead directly centered on link wire */}
+                          <circle
+                            cx={0}
+                            cy={0}
+                            r={5.5}
+                            className={
+                              currentStepEvent.status === 'error'
+                                ? 'fill-rose-400 stroke-white'
+                                : currentStepEvent.action === 'reply'
+                                ? 'fill-emerald-400 stroke-white'
+                                : 'fill-cyan-300 stroke-white'
                             }
                             strokeWidth={1.5}
                           />
-                          <text
-                            textAnchor="middle"
-                            dy="3"
-                            style={{
-                              fill:
-                                currentStepEvent.status === 'error' ? '#ffffff' : '#020617',
-                            }}
-                            className="text-[10px] font-mono font-bold"
-                          >
-                            {currentStepEvent.protocol} {currentStepEvent.action === 'reply' ? '↩' : '→'}
-                          </text>
+                          {/* Elevated Glass Packet Capsule Tag floating directly above the bead */}
+                          <g transform="translate(0, -22)">
+                            <rect
+                              x={-44}
+                              y={-13}
+                              width={88}
+                              height={26}
+                              rx={7}
+                              filter="url(#packetGlow)"
+                              className={
+                                currentStepEvent.status === 'error'
+                                  ? 'fill-rose-600 stroke-rose-200'
+                                  : currentStepEvent.protocol === 'ARP'
+                                  ? 'fill-amber-500 stroke-amber-100'
+                                  : currentStepEvent.action === 'reply'
+                                  ? 'fill-emerald-600 stroke-emerald-100'
+                                  : 'fill-cyan-600 stroke-cyan-100'
+                              }
+                              strokeWidth={1.5}
+                            />
+                            <text
+                              textAnchor="middle"
+                              dy="4"
+                              style={{ fill: '#ffffff' }}
+                              className="text-[10px] font-mono font-bold tracking-wider select-none pointer-events-none drop-shadow"
+                            >
+                              {currentStepEvent.protocol} {currentStepEvent.action === 'reply' ? '↩' : '→'}
+                            </text>
+                          </g>
                         </g>
                       );
                     })()}
@@ -1175,31 +1409,81 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </svg>
 
           {/* Bottom-Left Canvas Viewport Controls (Liquid Glass Dock) */}
-          <div className="absolute bottom-3 left-3 flex items-center gap-1 liquid-glass bg-slate-900/90 border border-slate-800 p-1.5 rounded-xl shadow-xl">
+          <div className="absolute bottom-3 left-3 flex items-center gap-1 liquid-glass bg-slate-900/90 border border-slate-800 p-1.5 rounded-xl shadow-xl z-20">
             <button
-              onClick={() => setZoom((z) => Math.min(2, +(z + 0.15).toFixed(2)))}
-              title="Zoom In"
+              onClick={() => setZoom((z) => Math.min(5.0, +(z * 1.25).toFixed(2)))}
+              title="Zoom In (All the way to 500%)"
               aria-label="Zoom In"
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded"
+              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
-            <span className="px-1.5 text-[11px] font-mono text-slate-400 tabular-nums">
-              {Math.round(zoom * 100)}%
-            </span>
+            <div className="relative">
+              <button
+                onClick={() => setZoomMenuOpen((v) => !v)}
+                title="Click for magnification presets (10% to 500%)"
+                className="px-1.5 py-0.5 text-[11px] font-mono text-cyan-300 hover:bg-slate-800/80 rounded tabular-nums transition-colors font-medium"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              {zoomMenuOpen && (
+                <div className="absolute bottom-full mb-2 left-0 z-50 bg-slate-900/95 border border-slate-700/80 rounded-xl p-1.5 shadow-2xl flex flex-col gap-0.5 min-w-[130px] text-xs liquid-glass-elevated">
+                  <div className="text-[10px] text-slate-400 font-semibold px-2 py-1 uppercase tracking-wider">
+                    Magnification
+                  </div>
+                  {[
+                    { label: '500% (5x Max)', value: 5.0 },
+                    { label: '400% (4x)', value: 4.0 },
+                    { label: '300% (3x)', value: 3.0 },
+                    { label: '200% (2x)', value: 2.0 },
+                    { label: '150% (1.5x)', value: 1.5 },
+                    { label: '100% (1x Reset)', value: 1.0 },
+                    { label: '75%', value: 0.75 },
+                    { label: '50%', value: 0.5 },
+                    { label: '25%', value: 0.25 },
+                    { label: '10% (0.1x Min)', value: 0.1 },
+                  ].map((lvl) => (
+                    <button
+                      key={lvl.value}
+                      onClick={() => {
+                        setZoom(lvl.value);
+                        setZoomMenuOpen(false);
+                      }}
+                      className={`px-2 py-1 text-left rounded-md text-[11px] font-mono transition-colors ${
+                        Math.round(zoom * 100) === Math.round(lvl.value * 100)
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {lvl.label}
+                    </button>
+                  ))}
+                  <div className="h-px bg-slate-800 my-1" />
+                  <button
+                    onClick={() => {
+                      handleFitToScreen();
+                      setZoomMenuOpen(false);
+                    }}
+                    className="px-2 py-1 text-left rounded-md text-[11px] text-cyan-300 hover:bg-slate-800 font-medium"
+                  >
+                    Fit Entire Canvas
+                  </button>
+                </div>
+              )}
+            </div>
             <button
-              onClick={() => setZoom((z) => Math.max(0.45, +(z - 0.15).toFixed(2)))}
-              title="Zoom Out"
+              onClick={() => setZoom((z) => Math.max(0.08, +(z * 0.8).toFixed(2)))}
+              title="Zoom Out (All the way to 10%)"
               aria-label="Zoom Out"
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded"
+              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
               onClick={handleFitToScreen}
-              title="Reset Zoom & Fit Canvas"
-              aria-label="Reset Zoom"
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded"
+              title="Fit Entire Network to Screen"
+              aria-label="Reset Zoom & Fit"
+              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
             >
               <Maximize2 className="w-4 h-4" />
             </button>
@@ -1241,6 +1525,71 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               <Redo2 className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Fullscreen Floating Glass HUD (visible when workspace is in Fullscreen / Zen Mode) */}
+          {isWorkspaceFullscreen && (
+            <aside
+              aria-label="Fullscreen Controls HUD"
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-2xl liquid-glass-elevated bg-slate-900/90 border border-cyan-500/40 shadow-2xl backdrop-blur-xl animate-view-fade-slide max-w-[94vw]"
+            >
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-300 mr-1 shrink-0">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                </span>
+                <span className="hidden sm:inline font-semibold">Fullscreen Mode</span>
+              </div>
+
+              {/* Direct Preset Selector inside Fullscreen HUD */}
+              <button
+                onClick={() => setPresetModalOpen(true)}
+                title="Browse Preset Topologies (Star, Bus, Mesh, Ring, Hybrid)"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors shrink-0"
+              >
+                <Layers className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="hidden md:inline">Presets</span>
+              </button>
+
+              <div className="w-px h-4 bg-slate-700 shrink-0" />
+
+              {/* Quick Zoom inside Fullscreen HUD */}
+              <button
+                onClick={() => setZoom((z) => Math.min(5.0, +(z * 1.25).toFixed(2)))}
+                title="Zoom In (All the way to 500%)"
+                className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 shrink-0"
+                aria-label="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setZoom((z) => Math.max(0.08, +(z * 0.8).toFixed(2)))}
+                title="Zoom Out (All the way to 10%)"
+                className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 shrink-0"
+                aria-label="Zoom Out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleFitToScreen}
+                title="Fit Network to Screen"
+                className="px-1.5 py-0.5 rounded-md text-cyan-300 hover:bg-slate-800 shrink-0 text-xs font-mono font-medium"
+              >
+                Fit
+              </button>
+
+              <div className="w-px h-4 bg-slate-700 shrink-0" />
+
+              {/* Exit Fullscreen Button */}
+              <button
+                onClick={onToggleWorkspaceFullscreen}
+                title="Exit Fullscreen / Restore All Panels (Press Esc or F)"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 font-semibold text-xs shadow-md transition-colors shrink-0"
+              >
+                <Minimize2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Exit Fullscreen</span>
+              </button>
+            </aside>
+          )}
 
           {/* Inline Annotation Edit Popover */}
           {editingAnnotationId && (
@@ -1363,6 +1712,140 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   </div>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preset Topologies Gallery Modal */}
+      {presetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl liquid-glass-elevated bg-slate-900/95 border border-slate-700/80 shadow-2xl overflow-hidden animate-view-fade-slide">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between gap-3 bg-slate-950/40">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+                    <span>Verified Preset Topologies Library</span>
+                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">
+                      {NETWORK_TEMPLATES.length} Ready-to-Use Labs
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Select any pre-configured networking architecture to load into your topology canvas immediately.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPresetModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                aria-label="Close preset gallery"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="px-5 py-2.5 border-b border-slate-800/60 bg-slate-950/20 flex flex-wrap gap-1.5">
+              {(
+                ['All', 'Network Topologies', 'Starter LAN', 'Routing', 'VLANs & Switching', 'Services', 'Enterprise', 'Troubleshooting'] as const
+              ).map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setPresetCategoryFilter(cat)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    presetCategoryFilter === cat
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-md'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Topologies Grid */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {NETWORK_TEMPLATES.filter(
+                (tpl) => presetCategoryFilter === 'All' || tpl.category === presetCategoryFilter
+              ).map((tpl) => (
+                <div
+                  key={tpl.id}
+                  className="p-4 rounded-xl border border-slate-800/90 bg-slate-950/60 hover:border-cyan-500/40 hover:bg-slate-950/90 transition-all flex flex-col justify-between space-y-3 group"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                        {tpl.category}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          tpl.difficulty === 'Beginner'
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : tpl.difficulty === 'Intermediate'
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : 'bg-rose-500/20 text-rose-300'
+                        }`}
+                      >
+                        {tpl.difficulty}
+                      </span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
+                      {tpl.name}
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      {tpl.description}
+                    </p>
+
+                    {tpl.learningObjectives.length > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                          Key Concepts:
+                        </span>
+                        <ul className="text-[11px] text-slate-300 space-y-0.5 list-disc list-inside">
+                          {tpl.learningObjectives.slice(0, 2).map((obj, i) => (
+                            <li key={i} className="truncate">{obj}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Pre-wired &amp; Verified
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (onSelectPresetTopology) {
+                          onSelectPresetTopology(tpl.id);
+                        }
+                        setPresetModalOpen(false);
+                        setTimeout(() => handleFitToScreen(), 100);
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors shadow-md"
+                    >
+                      <Play className="w-3.5 h-3.5 shrink-0" />
+                      <span>Load Topology</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-800/80 bg-slate-950/60 flex items-center justify-between text-xs text-slate-400">
+              <span>Loading a preset preserves your saved projects in local storage.</span>
+              <button
+                onClick={() => setPresetModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+              >
+                Close Gallery
+              </button>
             </div>
           </div>
         </div>

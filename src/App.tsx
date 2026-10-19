@@ -49,6 +49,7 @@ import {
   validateAndMigrateProjectJson,
 } from './store/persistence';
 import { GUIDED_LABS, TROUBLESHOOTING_CHALLENGES } from './data/labsAndChallenges';
+import { NETWORK_TEMPLATES } from './data/templates';
 import { TopologyCanvas } from './components/TopologyCanvas';
 import { DeviceInspector } from './components/DeviceInspector';
 import { BottomWorkspaceDock } from './components/BottomWorkspaceDock';
@@ -104,6 +105,7 @@ export default function App() {
   const [activeSimulation, setActiveSimulation] = useState<SimulationSession | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [isPlayingSteps, setIsPlayingSteps] = useState<boolean>(false);
+  const [isAutoLooping, setIsAutoLooping] = useState<boolean>(true);
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
   // Diagnostics State
@@ -114,6 +116,9 @@ export default function App() {
 
   // Mobile Navigation Drawer
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+
+  // Fullscreen / Zen Workspace Mode (Minimizes all panels & headers for maximum canvas area)
+  const [isWorkspaceFullscreen, setIsWorkspaceFullscreen] = useState<boolean>(false);
 
   // Apply theme class to document root
   useEffect(() => {
@@ -141,18 +146,44 @@ export default function App() {
   // Step-by-step packet playback timer
   useEffect(() => {
     if (!isPlayingSteps || !activeSimulation) return;
-    const intervalMs = Math.max(320, Math.round(900 / simulationSpeed));
+    const intervalMs = Math.max(300, Math.round(850 / simulationSpeed));
     const timer = setInterval(() => {
       setCurrentStepIndex((prev) => {
         if (prev >= activeSimulation.events.length - 1) {
-          setIsPlayingSteps(false);
-          return prev;
+          if (isAutoLooping && simulationMode === 'realtime') {
+            return 0; // Loop seamlessly in real-time mode!
+          } else {
+            setIsPlayingSteps(false);
+            return prev;
+          }
         }
         return prev + 1;
       });
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [isPlayingSteps, activeSimulation, simulationSpeed]);
+  }, [isPlayingSteps, activeSimulation, simulationSpeed, isAutoLooping, simulationMode]);
+
+  // Auto-initiate real-time packet animation if on simulator in realtime mode with no active simulation
+  useEffect(() => {
+    if (
+      activeNav === 'simulator' &&
+      simulationMode === 'realtime' &&
+      !activeSimulation &&
+      currentProject.devices.length >= 2
+    ) {
+      const src = currentProject.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
+      const dst = currentProject.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
+      if (src && dst) {
+        const dstIp = dst.interfaces.find((i) => i.ipAddress)?.ipAddress;
+        if (dstIp) {
+          const timer = setTimeout(() => {
+            handleRunQuickPing(src.id, dstIp);
+          }, 450);
+          return () => clearTimeout(timer);
+        }
+      }
+    }
+  }, [activeNav, currentProject.id, simulationMode]);
 
   const showToast = (msg: string) => {
     setSaveToast(msg);
@@ -394,6 +425,26 @@ export default function App() {
     }));
   };
 
+  const handleSetSimulationMode = (mode: 'realtime' | 'step') => {
+    setSimulationMode(mode);
+    if (mode === 'realtime') {
+      setIsAutoLooping(true);
+      setSimulationSpeed(1.5);
+      setIsPlayingSteps(true);
+      if (!activeSimulation && currentProject.devices.length >= 2) {
+        const src = currentProject.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
+        const dst = currentProject.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
+        if (src && dst) {
+          const dstIp = dst.interfaces.find((i) => i.ipAddress)?.ipAddress;
+          if (dstIp) {
+            handleRunQuickPing(src.id, dstIp);
+            return;
+          }
+        }
+      }
+    }
+  };
+
   const handleExecuteCliCommand = (deviceId: string, command: string) => {
     const dev = currentProject.devices.find((d) => d.id === deviceId);
     if (!dev) return;
@@ -531,6 +582,36 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  const handleSelectPresetTopology = (templateId: string) => {
+    const tpl = NETWORK_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+    try {
+      const built = tpl.buildProject();
+      commitProjectUpdate(built);
+      setActiveSimulation(null);
+      setCurrentStepIndex(0);
+      setIsPlayingSteps(false);
+      setSelectedDeviceId(built.devices[0]?.id || null);
+      setActiveNav('simulator');
+      showToast(`Loaded preset topology: ${tpl.name}`);
+      if (simulationMode === 'realtime') {
+        setTimeout(() => {
+          const src = built.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
+          const dst = built.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
+          if (src && dst) {
+            const dstIp = dst.interfaces.find((i) => i.ipAddress)?.ipAddress;
+            if (dstIp) {
+              handleRunQuickPing(src.id, dstIp);
+            }
+          }
+        }, 350);
+      }
+    } catch (err: any) {
+      console.error('Failed to load preset topology:', err);
+      showToast(`Failed to load preset topology: ${err?.message || 'Error'}`);
+    }
+  };
+
   const selectedDevice = currentProject.devices.find((d) => d.id === selectedDeviceId) || null;
   const desktopModalDevice =
     currentProject.devices.find((d) => d.id === desktopModalDeviceId) || null;
@@ -541,116 +622,120 @@ export default function App() {
         theme === 'light' ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'
       }`}
     >
-      {/* Top Bar Contract: Zone 1 (Wordmark) — Zone 2 (Concise Nav Links) — Zone 3 (1 Primary Action) */}
-      <header className="h-14 px-3 sm:px-6 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-3 lg:gap-8 shrink-0 z-30">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="#simulator"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveNav('simulator');
-          }}
-          className="text-sm sm:text-base lg:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 flex items-baseline gap-1.5"
-        >
-          <span>NetLab Simulator</span>
-          <span className="text-[11px] font-mono font-semibold text-cyan-400">by SHIRO</span>
-        </a>
+      {/* Top Bar: Flexible across all screen sizes (auto-hidden in Fullscreen mode) */}
+      {!isWorkspaceFullscreen && (
+        <header className="h-14 px-3 sm:px-6 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-2 sm:gap-4 lg:gap-8 shrink-0 z-30">
+          {/* Zone 1: Single text element wordmark */}
+          <a
+            href="#simulator"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveNav('simulator');
+            }}
+            className="text-xs sm:text-base lg:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 flex items-baseline gap-1.5"
+          >
+            <span>NetLab Simulator</span>
+            <span className="text-[10px] sm:text-[11px] font-mono font-semibold text-cyan-400">by SHIRO</span>
+          </a>
 
-        {/* Zone 2: 5 concise single-line text navigation links */}
-        <nav className="hidden lg:flex items-center gap-5 xl:gap-6 text-xs font-medium text-slate-300">
-          {(
-            [
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'simulator', label: 'Simulator' },
-              { id: 'learning', label: 'Learning Center' },
-              { id: 'labs', label: 'Guided Labs' },
-              { id: 'subnet-calc', label: 'Subnet Calculator' },
-            ] as const
-          ).map((item) => (
+          {/* Zone 2: 5 concise single-line text navigation links */}
+          <nav className="hidden lg:flex items-center gap-5 xl:gap-6 text-xs font-medium text-slate-300">
+            {(
+              [
+                { id: 'dashboard', label: 'Dashboard' },
+                { id: 'simulator', label: 'Simulator' },
+                { id: 'learning', label: 'Learning Center' },
+                { id: 'labs', label: 'Guided Labs' },
+                { id: 'subnet-calc', label: 'Subnet Calculator' },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveNav(item.id)}
+                className={`hover:text-white transition-colors whitespace-nowrap shrink-0 py-1 ${
+                  activeNav === item.id
+                    ? 'text-cyan-400 underline underline-offset-8 decoration-2 decoration-cyan-400 font-semibold'
+                    : ''
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Zone 3: Save button + responsive mobile & tablet hamburger drawer button */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
-              key={item.id}
-              onClick={() => setActiveNav(item.id)}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 py-1 ${
-                activeNav === item.id
-                  ? 'text-cyan-400 underline underline-offset-8 decoration-2 decoration-cyan-400 font-semibold'
-                  : ''
-              }`}
+              onClick={handleSaveCurrentProject}
+              className="px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-500 rounded-lg hover:bg-cyan-400 transition-colors whitespace-nowrap shrink-0"
             >
-              {item.label}
+              {unsavedChanges ? 'Save Project *' : 'Save Project'}
             </button>
-          ))}
-        </nav>
-
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleSaveCurrentProject}
-            className="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-500 rounded-lg hover:bg-cyan-400 transition-colors whitespace-nowrap shrink-0"
-          >
-            {unsavedChanges ? 'Save Project *' : 'Save Project'}
-          </button>
-          <button
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            aria-label="Open navigation menu"
-            className="md:hidden p-1.5 text-slate-300 hover:text-white rounded-lg"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
-      </header>
+            <button
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              aria-label="Open navigation menu"
+              className="lg:hidden p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-slate-900 transition-colors"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Main Workspace Container */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Compact Left Navigation Rail (All 10 Destinations Accessible in 1 Click) */}
-        <nav
-          aria-label="Primary Sidebar Navigation"
-          className="hidden md:flex flex-col w-48 border-r border-slate-800 bg-slate-950 p-2.5 justify-between shrink-0"
-        >
-          <div className="space-y-1">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeNav === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveNav(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                    isActive
-                      ? 'bg-cyan-500/15 text-cyan-300 font-semibold border border-cyan-500/30'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
+        {/* Compact Left Navigation Rail (auto-hidden in Fullscreen mode) */}
+        {!isWorkspaceFullscreen && (
+          <nav
+            aria-label="Primary Sidebar Navigation"
+            className="hidden md:flex flex-col w-48 border-r border-slate-800 bg-slate-950 p-2.5 justify-between shrink-0"
+          >
+            <div className="space-y-1">
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeNav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveNav(item.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                      isActive
+                        ? 'bg-cyan-500/15 text-cyan-300 font-semibold border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-          {/* Active Project Status & Quick Theme Toggle Card at bottom of sidebar */}
-          <div className="space-y-2">
-            <button
-              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-800 bg-slate-900/70 hover:bg-slate-800 text-xs font-medium text-slate-200 transition-colors"
-            >
-              <span>Theme Mode</span>
-              <span className="font-mono text-[11px] text-cyan-400">
-                {theme === 'dark' ? 'Dark' : 'Light'}
-              </span>
-            </button>
-            <div className="p-3 rounded-lg bg-slate-900/70 border border-slate-800/90 text-[11px] space-y-1">
-              <div className="text-slate-400">Active Topology</div>
-              <div className="font-semibold text-slate-200 truncate">{currentProject.name}</div>
-              <div className="text-slate-400 font-mono tabular-nums">
-                {currentProject.devices.length} devices · {currentProject.links.length} cables
-              </div>
-              <div className="pt-1.5 mt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
-                <span className="text-slate-400">Created by</span>
-                <span className="font-mono font-bold text-cyan-400 tracking-wider">SHIRO</span>
+            {/* Active Project Status & Quick Theme Toggle Card at bottom of sidebar */}
+            <div className="space-y-2">
+              <button
+                onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-slate-800 bg-slate-900/70 hover:bg-slate-800 text-xs font-medium text-slate-200 transition-colors"
+              >
+                <span>Theme Mode</span>
+                <span className="font-mono text-[11px] text-cyan-400">
+                  {theme === 'dark' ? 'Dark' : 'Light'}
+                </span>
+              </button>
+              <div className="p-3 rounded-lg bg-slate-900/70 border border-slate-800/90 text-[11px] space-y-1">
+                <div className="text-slate-400">Active Topology</div>
+                <div className="font-semibold text-slate-200 truncate">{currentProject.name}</div>
+                <div className="text-slate-400 font-mono tabular-nums">
+                  {currentProject.devices.length} devices · {currentProject.links.length} cables
+                </div>
+                <div className="pt-1.5 mt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400">Created by</span>
+                  <span className="font-mono font-bold text-cyan-400 tracking-wider">SHIRO</span>
+                </div>
               </div>
             </div>
-          </div>
-        </nav>
+          </nav>
+        )}
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
@@ -769,7 +854,7 @@ export default function App() {
                   snapToGrid={snapToGrid}
                   onToggleSnapToGrid={() => setSnapToGrid((s) => !s)}
                   simulationMode={simulationMode}
-                  onSetSimulationMode={setSimulationMode}
+                  onSetSimulationMode={handleSetSimulationMode}
                   activeSimulation={activeSimulation}
                   currentStepIndex={currentStepIndex}
                   isPlayingSteps={isPlayingSteps}
@@ -795,9 +880,14 @@ export default function App() {
                   onOpenDesktopModal={(devId) => setDesktopModalDeviceId(devId)}
                   onOpenMobileInspector={() => setMobileInspectorOpen(true)}
                   onExportPdf={() => handleExportPdf(currentProject)}
+                  isAutoLooping={isAutoLooping}
+                  onToggleAutoLoop={() => setIsAutoLooping((v) => !v)}
+                  onSelectPresetTopology={handleSelectPresetTopology}
+                  isWorkspaceFullscreen={isWorkspaceFullscreen}
+                  onToggleWorkspaceFullscreen={() => setIsWorkspaceFullscreen((v) => !v)}
                 />
 
-                <div className="hidden xl:flex h-full">
+                <div className={isWorkspaceFullscreen ? 'hidden' : 'hidden xl:flex h-full'}>
                   <DeviceInspector
                     device={selectedDevice}
                     allDevices={currentProject.devices}
@@ -815,7 +905,7 @@ export default function App() {
                 </div>
 
                 {/* Mobile & Tablet Inspector Drawer */}
-                {mobileInspectorOpen && selectedDevice && (
+                {mobileInspectorOpen && selectedDevice && !isWorkspaceFullscreen && (
                   <div className="fixed inset-0 z-50 bg-black/70 flex justify-end xl:hidden">
                     <div className="w-full max-w-md bg-slate-900 h-full flex flex-col">
                       <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
@@ -859,7 +949,7 @@ export default function App() {
 
               {/* Collapsible Bottom Workspace Dock (CLI, Packet Inspector, Diagnostics) */}
               <BottomWorkspaceDock
-                isOpen={bottomDockOpen}
+                isOpen={isWorkspaceFullscreen ? false : bottomDockOpen}
                 onToggleOpen={() => setBottomDockOpen((o) => !o)}
                 activeTab={bottomDockTab}
                 onSetTab={setBottomDockTab}
