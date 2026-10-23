@@ -39,7 +39,9 @@ import {
   Minimize2,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { NETWORK_TEMPLATES } from '../data/templates';
 import {
   DeviceCategory,
@@ -132,6 +134,9 @@ interface TopologyCanvasProps {
   onSelectPresetTopology?: (templateId: string) => void;
   isWorkspaceFullscreen?: boolean;
   onToggleWorkspaceFullscreen?: () => void;
+  authUser?: User | null;
+  onSaveToCloud?: () => Promise<void>;
+  isSavingToCloud?: boolean;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
@@ -176,6 +181,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onSelectPresetTopology,
   isWorkspaceFullscreen = false,
   onToggleWorkspaceFullscreen,
+  authUser = null,
+  onSaveToCloud,
+  isSavingToCloud = false,
 }) => {
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -437,6 +445,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     });
   };
 
+  // Automatically fit-to-screen and reset transient states when any project or preset topology is loaded
+  React.useEffect(() => {
+    setPingSourceId('');
+    setPingTargetInput('');
+    setConnectSourceDeviceId(null);
+    setConnectSourceInterfaceId(null);
+    setConnectTargetDeviceId(null);
+    setConnectionWarning(null);
+    const timer = setTimeout(() => {
+      handleFitToScreen();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [project.id]);
+
   const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
     const rect = svgRef.current?.getBoundingClientRect();
@@ -637,6 +659,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 onChange={(e) => {
                   if (e.target.value && onSelectPresetTopology) {
                     onSelectPresetTopology(e.target.value);
+                    setTimeout(() => handleFitToScreen(), 100);
                   }
                 }}
                 aria-label="Select Preset Network Topology"
@@ -664,7 +687,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
             <div className="hidden xl:flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
               <select
-                value={pingSourceId || selectedDeviceId || ''}
+                value={pingSourceId || (project.devices.some((d) => d.id === selectedDeviceId) ? selectedDeviceId : '') || ''}
                 onChange={(e) => setPingSourceId(e.target.value)}
                 aria-label="Ping source device"
                 className="bg-transparent text-xs text-slate-200 focus:outline-none"
@@ -689,11 +712,16 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               />
               <button
                 onClick={() => {
-                  const src = pingSourceId || selectedDeviceId || project.devices[0]?.id;
+                  const validSrcDev =
+                    project.devices.find((d) => d.id === pingSourceId) ||
+                    project.devices.find((d) => d.id === selectedDeviceId) ||
+                    project.devices.find((d) => d.interfaces.some((i) => i.ipAddress)) ||
+                    project.devices[0];
+                  const src = validSrcDev?.id;
+                  const validDstDev = project.devices.find((d) => d.id !== src && d.interfaces.some((i) => i.ipAddress));
                   const dst =
                     pingTargetInput.trim() ||
-                    project.devices.find((d) => d.id !== src && d.interfaces[0]?.ipAddress)?.interfaces[0]
-                      ?.ipAddress ||
+                    validDstDev?.interfaces.find((i) => i.ipAddress)?.ipAddress ||
                     '192.168.1.20';
                   if (src) onRunQuickPing(src, dst);
                 }}
@@ -739,6 +767,23 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             >
               <ShieldAlert className="w-3.5 h-3.5" /> Check Network
             </button>
+
+            {onSaveToCloud && (
+              <button
+                onClick={() => onSaveToCloud()}
+                disabled={isSavingToCloud}
+                title={authUser ? `Save "${project.name}" to your Google Cloud Account (${authUser.email})` : 'Sign in with Google to save project to cloud'}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
+              >
+                {isSavingToCloud ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                ) : (
+                  <Cloud className="w-3.5 h-3.5 text-indigo-400" />
+                )}
+                <span className="hidden sm:inline">Save to Cloud</span>
+                <span className="sm:hidden">Cloud</span>
+              </button>
+            )}
 
             {onExportPdf && (
               <button

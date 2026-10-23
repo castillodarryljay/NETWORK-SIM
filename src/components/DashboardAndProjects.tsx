@@ -20,7 +20,15 @@ import {
   Edit3,
   X,
   FileDown,
+  Cloud,
+  CloudCheck,
+  LogIn,
+  LogOut,
+  Loader2,
+  Sparkles,
+  Check,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { NetworkProject } from '../types/network';
 import { NavSection, StudentProgressState } from '../store/persistence';
 import { NETWORK_TEMPLATES } from '../data/templates';
@@ -49,6 +57,14 @@ interface DashboardAndProjectsProps {
   onOpenLesson: (lessonId: string) => void;
   onToggleOnboardingDismiss: (dismiss: boolean) => void;
   onResetProgressOnly: () => void;
+  // Firebase Auth & Cloud Sync
+  authUser?: User | null;
+  cloudProjects?: NetworkProject[];
+  onSignIn?: () => Promise<void>;
+  onSignOut?: () => Promise<void>;
+  onSaveToCloud?: (project: NetworkProject) => Promise<void>;
+  onDeleteProjectFromCloud?: (projectId: string) => Promise<void>;
+  isSavingToCloud?: boolean;
 }
 
 export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
@@ -73,14 +89,23 @@ export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
   onOpenLesson,
   onToggleOnboardingDismiss,
   onResetProgressOnly,
+  authUser = null,
+  cloudProjects = [],
+  onSignIn,
+  onSignOut,
+  onSaveToCloud,
+  onDeleteProjectFromCloud,
+  isSavingToCloud = false,
 }) => {
   const [newProjName, setNewProjName] = useState('');
   const [newProjDesc, setNewProjDesc] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteCloudId, setConfirmDeleteCloudId] = useState<string | null>(null);
   const [confirmResetProgress, setConfirmResetProgress] = useState(false);
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState<string>('All');
+  const [projectsViewTab, setProjectsViewTab] = useState<'cloud' | 'local'>('cloud');
 
   const checklistItems = [
     {
@@ -491,168 +516,422 @@ export const DashboardAndProjects: React.FC<DashboardAndProjectsProps> = ({
             </div>
           </div>
 
-          {/* Create New Blank Topology Form */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!newProjName.trim()) return;
-              onCreateNewProject(newProjName.trim(), newProjDesc.trim());
-              setNewProjName('');
-              setNewProjDesc('');
-            }}
-            className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 flex flex-col sm:flex-row gap-3 items-end"
-          >
-            <div className="flex-1 w-full">
-              <label className="block text-xs text-slate-400 mb-1">New Blank Project Name</label>
-              <input
-                type="text"
-                value={newProjName}
-                onChange={(e) => setNewProjName(e.target.value)}
-                placeholder="e.g. Branch Office OSPF Lab"
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
-              />
-            </div>
-            <div className="flex-1 w-full">
-              <label className="block text-xs text-slate-400 mb-1">Description (Optional)</label>
-              <input
-                type="text"
-                value={newProjDesc}
-                onChange={(e) => setNewProjDesc(e.target.value)}
-                placeholder="Notes or subnet plan..."
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap"
-            >
-              + Create Blank Network
-            </button>
-          </form>
-
-          {/* Saved Projects List */}
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-slate-200">
-              Saved Projects in Browser Storage ({savedProjects.length})
-            </h2>
-            {savedProjects.length === 0 ? (
-              <div className="p-8 rounded-xl border border-slate-800 bg-slate-900/40 text-center text-xs text-slate-400">
-                You have no saved projects yet. Click <strong>Save Active Project</strong> above or create a new topology.
+          {/* Google Account Cloud Persistence Banner */}
+          <div className="p-5 rounded-2xl liquid-glass bg-gradient-to-r from-indigo-950/60 via-slate-900/80 to-slate-900/60 border border-indigo-500/30 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shrink-0 mt-0.5">
+                  <Cloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm sm:text-base font-bold text-white">
+                      Google Account Cloud Sync
+                    </h2>
+                    {authUser ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <Check className="w-3 h-3" /> Synced to Account
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                        Offline Mode
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    {authUser ? (
+                      <span>
+                        Signed in as <strong className="text-white">{authUser.displayName || authUser.email}</strong> ({authUser.email}). Your custom topologies and lab designs are safely stored in your Google Cloud account.
+                      </span>
+                    ) : (
+                      'Sign in with your Google account to save your topologies directly to your account, resume your work on any PC or mobile device, and keep your network labs permanently backed up.'
+                    )}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {savedProjects.map((proj) => (
-                  <div
-                    key={proj.id}
-                    className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 space-y-3 flex flex-col justify-between"
-                  >
-                    <div>
-                      {renamingId === proj.id ? (
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={renameText}
-                            onChange={(e) => setRenameText(e.target.value)}
-                            className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white"
-                          />
-                          <button
-                            onClick={() => {
-                              if (renameText.trim()) onRenameProject(proj.id, renameText.trim());
-                              setRenamingId(null);
-                            }}
-                            className="px-2.5 py-1 rounded bg-cyan-500 text-slate-950 text-xs font-semibold"
-                          >
-                            Save
-                          </button>
-                        </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {authUser ? (
+                  <>
+                    <button
+                      onClick={() => onSaveToCloud && onSaveToCloud(currentProject)}
+                      disabled={isSavingToCloud}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md transition-colors disabled:opacity-50"
+                    >
+                      {isSavingToCloud ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-bold text-white">{proj.name}</h3>
-                          <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                            {proj.devices.length} devices · {proj.links.length} links
+                        <Cloud className="w-3.5 h-3.5" />
+                      )}
+                      <span>Save Current to Cloud</span>
+                    </button>
+                    {onSignOut && (
+                      <button
+                        onClick={onSignOut}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/80 hover:bg-slate-800 text-slate-300 text-xs transition-colors"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Sign Out</span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  onSignIn && (
+                    <button
+                      onClick={onSignIn}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold shadow-lg transition-all"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Sign In with Google</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Storage Destination Switcher Tabs */}
+          <div className="flex border-b border-slate-800 gap-6">
+            <button
+              onClick={() => setProjectsViewTab('cloud')}
+              className={`pb-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+                projectsViewTab === 'cloud'
+                  ? 'border-indigo-400 text-indigo-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Cloud className="w-4 h-4 text-indigo-400" />
+              <span>Google Cloud Projects</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-indigo-500/20 text-indigo-300">
+                {cloudProjects.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setProjectsViewTab('local')}
+              className={`pb-3 text-xs sm:text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+                projectsViewTab === 'local'
+                  ? 'border-cyan-400 text-cyan-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4 text-cyan-400" />
+              <span>Browser Local Storage</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-slate-300">
+                {savedProjects.length}
+              </span>
+            </button>
+          </div>
+
+          {/* TAB 1: Google Cloud Projects */}
+          {projectsViewTab === 'cloud' && (
+            <div className="space-y-4">
+              {!authUser ? (
+                <div className="p-8 rounded-xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+                    <Cloud className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">Sign In to View Your Cloud Projects</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    Log in with your Google account to access your saved network topologies from any computer or browser.
+                  </p>
+                  {onSignIn && (
+                    <button
+                      onClick={onSignIn}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md transition-colors"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>Sign In with Google</span>
+                    </button>
+                  )}
+                </div>
+              ) : cloudProjects.length === 0 ? (
+                <div className="p-8 rounded-xl border border-slate-800 bg-slate-900/40 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+                    <Cloud className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">No Cloud Projects Saved Yet</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    You are connected as <strong>{authUser.email}</strong>. Click below to save your active project directly to your Google account!
+                  </p>
+                  <button
+                    onClick={() => onSaveToCloud && onSaveToCloud(currentProject)}
+                    disabled={isSavingToCloud}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md transition-colors"
+                  >
+                    {isSavingToCloud ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cloud className="w-3.5 h-3.5" />}
+                    <span>Save "{currentProject.name}" to Cloud</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {cloudProjects.map((proj) => (
+                    <div
+                      key={proj.id}
+                      className="p-4 rounded-xl border border-indigo-500/30 bg-slate-900/60 space-y-3 flex flex-col justify-between hover:border-indigo-400/50 transition-all shadow-md"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <Cloud className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span>{proj.name}</span>
+                          </h3>
+                          <span className="text-[11px] font-mono text-indigo-300 tabular-nums">
+                            {proj.devices?.length || 0} devices · {proj.links?.length || 0} links
                           </span>
                         </div>
-                      )}
-                      <p className="text-xs text-slate-400 mt-1">
-                        {proj.description || 'Custom network topology'}
-                      </p>
-                      <div className="text-[11px] text-slate-500 mt-1">
-                        Updated: {new Date(proj.updatedAt).toLocaleString()}
+                        <p className="text-xs text-slate-400 mt-1">
+                          {proj.description || 'Cloud-synchronized network topology'}
+                        </p>
+                        <div className="text-[11px] text-slate-500 mt-1 font-mono">
+                          Saved: {new Date(proj.updatedAt).toLocaleString()}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800">
+                        <button
+                          onClick={() => {
+                            onOpenProject(proj);
+                            onNavigate('simulator');
+                          }}
+                          className="px-3 py-1.5 rounded bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-colors"
+                        >
+                          Open in Simulator
+                        </button>
+                        <button
+                          onClick={() => onExportProject(proj)}
+                          className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
+                        >
+                          Export JSON
+                        </button>
+                        {onExportProjectPdf && (
+                          <button
+                            onClick={() => onExportProjectPdf(proj)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs hover:bg-cyan-500/25 font-medium"
+                          >
+                            <FileDown className="w-3 h-3" /> PDF
+                          </button>
+                        )}
+                        {confirmDeleteCloudId === proj.id ? (
+                          <div className="flex items-center gap-1 ml-auto">
+                            <button
+                              onClick={async () => {
+                                if (onDeleteProjectFromCloud) {
+                                  await onDeleteProjectFromCloud(proj.id);
+                                }
+                                setConfirmDeleteCloudId(null);
+                              }}
+                              className="px-2 py-1 rounded bg-rose-600 text-white text-xs font-semibold"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteCloudId(null)}
+                              className="px-2 py-1 text-xs text-slate-400"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteCloudId(proj.id)}
+                            className="ml-auto p-1.5 text-rose-400 hover:text-rose-300"
+                            title="Delete from Cloud"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800">
-                      <button
-                        onClick={() => {
-                          onOpenProject(proj);
-                          onNavigate('simulator');
-                        }}
-                        className="px-3 py-1.5 rounded bg-cyan-500 text-slate-950 text-xs font-semibold hover:bg-cyan-400"
+          {/* TAB 2: Browser Local Storage Projects */}
+          {projectsViewTab === 'local' && (
+            <div className="space-y-6">
+              {/* Create New Blank Topology Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newProjName.trim()) return;
+                  onCreateNewProject(newProjName.trim(), newProjDesc.trim());
+                  setNewProjName('');
+                  setNewProjDesc('');
+                }}
+                className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 flex flex-col sm:flex-row gap-3 items-end"
+              >
+                <div className="flex-1 w-full">
+                  <label className="block text-xs text-slate-400 mb-1">New Blank Project Name</label>
+                  <input
+                    type="text"
+                    value={newProjName}
+                    onChange={(e) => setNewProjName(e.target.value)}
+                    placeholder="e.g. Branch Office OSPF Lab"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                  />
+                </div>
+                <div className="flex-1 w-full">
+                  <label className="block text-xs text-slate-400 mb-1">Description (Optional)</label>
+                  <input
+                    type="text"
+                    value={newProjDesc}
+                    onChange={(e) => setNewProjDesc(e.target.value)}
+                    placeholder="Notes or subnet plan..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap"
+                >
+                  + Create Blank Network
+                </button>
+              </form>
+
+              {/* Saved Projects List */}
+              <div className="space-y-3">
+                <h2 className="text-sm font-bold text-slate-200">
+                  Saved Projects in Browser Storage ({savedProjects.length})
+                </h2>
+                {savedProjects.length === 0 ? (
+                  <div className="p-8 rounded-xl border border-slate-800 bg-slate-900/40 text-center text-xs text-slate-400">
+                    You have no local saved projects yet. Click <strong>Save Active Project</strong> above or create a new topology.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {savedProjects.map((proj) => (
+                      <div
+                        key={proj.id}
+                        className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 space-y-3 flex flex-col justify-between"
                       >
-                        Open in Simulator
-                      </button>
-                      <button
-                        onClick={() => {
-                          setRenamingId(proj.id);
-                          setRenameText(proj.name);
-                        }}
-                        className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
-                      >
-                        Rename
-                      </button>
-                      <button
-                        onClick={() => onDuplicateProject(proj)}
-                        className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
-                      >
-                        Duplicate
-                      </button>
-                      <button
-                        onClick={() => onExportProject(proj)}
-                        className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
-                      >
-                        Export JSON
-                      </button>
-                      {onExportProjectPdf && (
-                        <button
-                          onClick={() => onExportProjectPdf(proj)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs hover:bg-cyan-500/25 font-medium"
-                        >
-                          <FileDown className="w-3 h-3" /> PDF
-                        </button>
-                      )}
-                      {confirmDeleteId === proj.id ? (
-                        <div className="flex items-center gap-1 ml-auto">
+                        <div>
+                          {renamingId === proj.id ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={renameText}
+                                onChange={(e) => setRenameText(e.target.value)}
+                                className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (renameText.trim()) onRenameProject(proj.id, renameText.trim());
+                                  setRenamingId(null);
+                                }}
+                                className="px-2.5 py-1 rounded bg-cyan-500 text-slate-950 text-xs font-semibold"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <h3 className="text-sm font-bold text-white">{proj.name}</h3>
+                              <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                                {proj.devices.length} devices · {proj.links.length} links
+                              </span>
+                            </div>
+                          )}
+                          <p className="text-xs text-slate-400 mt-1">
+                            {proj.description || 'Custom network topology'}
+                          </p>
+                          <div className="text-[11px] text-slate-500 mt-1">
+                            Updated: {new Date(proj.updatedAt).toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800">
                           <button
                             onClick={() => {
-                              onDeleteProject(proj.id);
-                              setConfirmDeleteId(null);
+                              onOpenProject(proj);
+                              onNavigate('simulator');
                             }}
-                            className="px-2 py-1 rounded bg-rose-600 text-white text-xs font-semibold"
+                            className="px-3 py-1.5 rounded bg-cyan-500 text-slate-950 text-xs font-semibold hover:bg-cyan-400"
                           >
-                            Confirm Delete
+                            Open in Simulator
                           </button>
                           <button
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="px-2 py-1 text-xs text-slate-400"
+                            onClick={() => {
+                              setRenamingId(proj.id);
+                              setRenameText(proj.name);
+                            }}
+                            className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
                           >
-                            Cancel
+                            Rename
                           </button>
+                          <button
+                            onClick={() => onDuplicateProject(proj)}
+                            className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            onClick={() => onExportProject(proj)}
+                            className="px-2.5 py-1.5 rounded bg-slate-800 text-slate-300 text-xs hover:text-white"
+                          >
+                            Export JSON
+                          </button>
+                          {onExportProjectPdf && (
+                            <button
+                              onClick={() => onExportProjectPdf(proj)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs hover:bg-cyan-500/25 font-medium"
+                            >
+                              <FileDown className="w-3 h-3" /> PDF
+                            </button>
+                          )}
+                          {confirmDeleteId === proj.id ? (
+                            <div className="flex items-center gap-1 ml-auto">
+                              <button
+                                onClick={() => {
+                                  onDeleteProject(proj.id);
+                                  setConfirmDeleteId(null);
+                                }}
+                                className="px-2 py-1 rounded bg-rose-600 text-white text-xs font-semibold"
+                              >
+                                Confirm Delete
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="px-2 py-1 text-xs text-slate-400"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(proj.id)}
+                              className="ml-auto p-1.5 text-rose-400 hover:text-rose-300"
+                              title="Delete Project"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmDeleteId(proj.id)}
-                          className="ml-auto p-1.5 text-rose-400 hover:text-rose-300"
-                          title="Delete Project"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     );

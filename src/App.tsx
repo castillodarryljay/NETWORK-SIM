@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   Network,
@@ -57,6 +57,19 @@ import { DeviceDesktopModal } from './components/DeviceDesktopModal';
 import { DashboardAndProjects } from './components/DashboardAndProjects';
 import { LearningAndToolsViews } from './components/LearningAndToolsViews';
 import { exportTopologyToPdf } from './utils/pdfExport';
+import { User } from 'firebase/auth';
+import {
+  signInWithGoogle,
+  signOutFromApp,
+  subscribeToAuth,
+  saveProjectToCloud,
+  fetchUserCloudProjects,
+  deleteProjectFromCloud,
+  subscribeToCloudProjects,
+  testFirestoreConnection,
+} from './services/firebase';
+import { UserAuthButton } from './components/UserAuthButton';
+import { Cloud, CloudUpload } from 'lucide-react';
 
 const NAV_ITEMS: { id: NavSection; label: string; shortLabel: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', shortLabel: 'Home', icon: LayoutDashboard },
@@ -77,6 +90,11 @@ export default function App() {
 
   // Core Project & Undo/Redo History State
   const [currentProject, setCurrentProject] = useState<NetworkProject>(() => loadInitialProject());
+  const currentProjectRef = useRef<NetworkProject>(currentProject);
+  useEffect(() => {
+    currentProjectRef.current = currentProject;
+  }, [currentProject]);
+
   const [undoStack, setUndoStack] = useState<NetworkProject[]>([]);
   const [redoStack, setRedoStack] = useState<NetworkProject[]>([]);
   const [unsavedChanges, setUnsavedChanges] = useState<boolean>(false);
@@ -84,6 +102,34 @@ export default function App() {
 
   const [savedProjects, setSavedProjects] = useState<NetworkProject[]>(() => loadSavedProjects());
   const [progress, setProgress] = useState<StudentProgressState>(() => loadStudentProgress());
+
+  // User Authentication & Cloud Sync
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [cloudProjects, setCloudProjects] = useState<NetworkProject[]>([]);
+  const [isSavingToCloud, setIsSavingToCloud] = useState<boolean>(false);
+
+  // Subscribe to Firebase Authentication state
+  useEffect(() => {
+    testFirestoreConnection();
+    const unsub = subscribeToAuth((user) => {
+      setAuthUser(user);
+      if (user) {
+        fetchUserCloudProjects(user.uid).then(setCloudProjects);
+      } else {
+        setCloudProjects([]);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Realtime subscription to user cloud projects
+  useEffect(() => {
+    if (!authUser) return;
+    const unsub = subscribeToCloudProjects(authUser.uid, (list) => {
+      setCloudProjects(list);
+    });
+    return () => unsub();
+  }, [authUser]);
 
   // Simulator Workspace UI States
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(() => {
@@ -171,14 +217,20 @@ export default function App() {
       !activeSimulation &&
       currentProject.devices.length >= 2
     ) {
-      const src = currentProject.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
-      const dst = currentProject.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
+      const proj = currentProject;
+      const src = proj.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
+      const dst = proj.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
       if (src && dst) {
         const dstIp = dst.interfaces.find((i) => i.ipAddress)?.ipAddress;
         if (dstIp) {
           const timer = setTimeout(() => {
-            handleRunQuickPing(src.id, dstIp);
-          }, 450);
+            if (
+              currentProjectRef.current.id === proj.id &&
+              currentProjectRef.current.devices.some((d) => d.id === src.id)
+            ) {
+              handleRunQuickPing(src.id, dstIp, currentProjectRef.current);
+            }
+          }, 350);
           return () => clearTimeout(timer);
         }
       }
@@ -192,7 +244,7 @@ export default function App() {
 
   const commitProjectUpdate = (nextProject: NetworkProject, recordUndo = true) => {
     if (recordUndo) {
-      setUndoStack((prev) => [...prev.slice(-19), currentProject]);
+      setUndoStack((prev) => [...prev.slice(-19), currentProjectRef.current]);
       setRedoStack([]);
     }
     const synced = synchronizeNetworkState(nextProject.devices, nextProject.links);
@@ -202,6 +254,7 @@ export default function App() {
       devices: synced.devices,
       links: synced.links,
     };
+    currentProjectRef.current = updated;
     setCurrentProject(updated);
     setUnsavedChanges(true);
   };
@@ -391,17 +444,32 @@ export default function App() {
     showToast(res.message);
   };
 
-  const handleRunQuickPing = (srcDeviceId: string, targetIp: string) => {
+  const handleRunQuickPing = (
+    srcDeviceId: string,
+    targetIp: string,
+    targetProject?: NetworkProject
+  ) => {
+    const proj = targetProject || currentProjectRef.current;
+    const validSrcDevice =
+      proj.devices.find((d) => d.id === srcDeviceId) ||
+      proj.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
+    if (!validSrcDevice) {
+      console.warn('Ping aborted: source device not in active project:', srcDeviceId);
+      return;
+    }
     const simResult = runPacketSimulation(
-      srcDeviceId,
+      validSrcDevice.id,
       targetIp,
       'ICMP',
-      currentProject.devices,
-      currentProject.links
+      proj.devices,
+      proj.links
     );
+    if (!simResult.session.events.length && simResult.session.summaryMessage?.includes('not found')) {
+      return;
+    }
     commitProjectUpdate(
       {
-        ...currentProject,
+        ...proj,
         devices: simResult.updatedDevices,
       },
       false
@@ -519,6 +587,68 @@ export default function App() {
     }
   };
 
+  const handleSignIn = async () => {
+    try {
+      const u = await signInWithGoogle();
+      showToast(`Signed in as ${u.displayName || u.email}!`);
+    } catch (e: any) {
+      if (e?.code !== 'auth/popup-closed-by-user') {
+        showToast(`Sign in error: ${e?.message || 'Failed'}`);
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOutFromApp();
+    showToast('Signed out of Google account.');
+  };
+
+  const handleSaveToCloud = async (proj: NetworkProject = currentProjectRef.current) => {
+    if (!authUser) {
+      try {
+        const u = await signInWithGoogle();
+        if (u) {
+          setIsSavingToCloud(true);
+          const res = await saveProjectToCloud(u.uid, proj);
+          if (res.ok) {
+            showToast(`Saved "${proj.name}" to your Google Cloud account.`);
+          } else {
+            showToast(`Cloud save error: ${res.error || 'Failed'}`);
+          }
+        }
+      } catch (e: any) {
+        if (e?.code !== 'auth/popup-closed-by-user') {
+          showToast(`Sign in error: ${e?.message || 'Failed'}`);
+        }
+      } finally {
+        setIsSavingToCloud(false);
+      }
+      return;
+    }
+
+    setIsSavingToCloud(true);
+    try {
+      const res = await saveProjectToCloud(authUser.uid, proj);
+      if (res.ok) {
+        showToast(`Saved "${proj.name}" to your Google Cloud account.`);
+      } else {
+        showToast(`Cloud save error: ${res.error || 'Failed'}`);
+      }
+    } finally {
+      setIsSavingToCloud(false);
+    }
+  };
+
+  const handleDeleteCloudProject = async (projectId: string) => {
+    if (!authUser) return;
+    const res = await deleteProjectFromCloud(authUser.uid, projectId);
+    if (res.ok) {
+      showToast('Deleted project from cloud account.');
+    } else {
+      showToast(`Delete failed: ${res.error || 'Failed'}`);
+    }
+  };
+
   const handleCreateNewProject = (name: string, description: string) => {
     const blank: NetworkProject = {
       id: `proj-${Date.now()}`,
@@ -587,6 +717,7 @@ export default function App() {
     if (!tpl) return;
     try {
       const built = tpl.buildProject();
+      currentProjectRef.current = built;
       commitProjectUpdate(built);
       setActiveSimulation(null);
       setCurrentStepIndex(0);
@@ -594,18 +725,6 @@ export default function App() {
       setSelectedDeviceId(built.devices[0]?.id || null);
       setActiveNav('simulator');
       showToast(`Loaded preset topology: ${tpl.name}`);
-      if (simulationMode === 'realtime') {
-        setTimeout(() => {
-          const src = built.devices.find((d) => d.interfaces.some((i) => i.ipAddress));
-          const dst = built.devices.find((d) => d.id !== src?.id && d.interfaces.some((i) => i.ipAddress));
-          if (src && dst) {
-            const dstIp = dst.interfaces.find((i) => i.ipAddress)?.ipAddress;
-            if (dstIp) {
-              handleRunQuickPing(src.id, dstIp);
-            }
-          }
-        }, 350);
-      }
     } catch (err: any) {
       console.error('Failed to load preset topology:', err);
       showToast(`Failed to load preset topology: ${err?.message || 'Error'}`);
@@ -663,11 +782,19 @@ export default function App() {
             ))}
           </nav>
 
-          {/* Zone 3: Save button + responsive mobile & tablet hamburger drawer button */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Zone 3: Google Login & Cloud Persistence + Save button + responsive mobile & tablet drawer button */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <UserAuthButton
+              user={authUser}
+              onSignIn={handleSignIn}
+              onSignOut={handleSignOut}
+              onSaveToCloud={() => handleSaveToCloud()}
+              onOpenProjects={() => setActiveNav('projects')}
+              isSavingToCloud={isSavingToCloud}
+            />
             <button
               onClick={handleSaveCurrentProject}
-              className="px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-500 rounded-lg hover:bg-cyan-400 transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-500 rounded-lg hover:bg-cyan-400 transition-colors whitespace-nowrap shrink-0 shadow-sm"
             >
               {unsavedChanges ? 'Save Project *' : 'Save Project'}
             </button>
@@ -753,6 +880,19 @@ export default function App() {
                   >
                     <X className="w-5 h-5" />
                   </button>
+                </div>
+                <div className="pb-3 mb-2 border-b border-slate-800">
+                  <UserAuthButton
+                    user={authUser}
+                    onSignIn={handleSignIn}
+                    onSignOut={handleSignOut}
+                    onSaveToCloud={() => handleSaveToCloud()}
+                    isSavingToCloud={isSavingToCloud}
+                    onOpenProjects={() => {
+                      setActiveNav('projects');
+                      setMobileMenuOpen(false);
+                    }}
+                  />
                 </div>
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
@@ -885,6 +1025,9 @@ export default function App() {
                   onSelectPresetTopology={handleSelectPresetTopology}
                   isWorkspaceFullscreen={isWorkspaceFullscreen}
                   onToggleWorkspaceFullscreen={() => setIsWorkspaceFullscreen((v) => !v)}
+                  authUser={authUser}
+                  onSaveToCloud={() => handleSaveToCloud()}
+                  isSavingToCloud={isSavingToCloud}
                 />
 
                 <div className={isWorkspaceFullscreen ? 'hidden' : 'hidden xl:flex h-full'}>
@@ -978,14 +1121,26 @@ export default function App() {
               mode={activeNav}
               currentProject={currentProject}
               savedProjects={savedProjects}
+              cloudProjects={cloudProjects}
+              authUser={authUser}
+              onSignIn={handleSignIn}
+              onSignOut={handleSignOut}
+              onSaveToCloud={handleSaveToCloud}
+              onDeleteProjectFromCloud={handleDeleteCloudProject}
+              isSavingToCloud={isSavingToCloud}
               progress={progress}
               theme={theme}
               onSetTheme={setTheme}
               onNavigate={setActiveNav}
               onOpenProject={(proj) => {
-                setCurrentProject(proj);
+                commitProjectUpdate(proj);
+                currentProjectRef.current = proj;
+                setActiveSimulation(null);
+                setCurrentStepIndex(0);
+                setIsPlayingSteps(false);
                 setSelectedDeviceId(proj.devices[0]?.id || null);
                 setUnsavedChanges(false);
+                setActiveNav('simulator');
               }}
               onCreateNewProject={handleCreateNewProject}
               onSaveCurrentProject={handleSaveCurrentProject}
